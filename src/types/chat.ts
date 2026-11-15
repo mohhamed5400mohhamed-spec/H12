@@ -99,6 +99,7 @@ export interface User {
   avatarUrl?: string;
   statusQuote: string;
   flag: string;
+  flagNumber?: number;
   role: 'admin' | 'super' | 'member' | 'guest' | string;
   likes: number;
   points: number;

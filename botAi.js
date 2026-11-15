@@ -1,6 +1,6 @@
 /**
  * وحدة الذكاء الاصطناعي للبوتات (botAi.js)
- * تتعامل مع @google/genai على الخادم فقط للإجابة الدقيقة على أسئلة الأعضاء عند ذكر اسم البوت قبل السؤال.
+ * تتعامل مع @google/genai على الخادم فقط للمحادثة الطبيعية السريعة والإجابة الدقيقة على أسئلة الأعضاء.
  */
 
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
@@ -107,7 +107,10 @@ function classifyGeminiError(err) {
   const status = err?.status || err?.code || '';
   const upper = `${status} ${msg}`.toUpperCase();
 
-  if (upper.includes('API_KEY_INVALID') || upper.includes('INVALID ARGUMENT') && upper.includes('API KEY')) {
+  if (upper.includes('TIMEOUT')) {
+    return { code: 'TIMEOUT', message: 'استغرق الاتصال وقتاً أطول من المتوقع.' };
+  }
+  if (upper.includes('API_KEY_INVALID') || (upper.includes('INVALID ARGUMENT') && upper.includes('API KEY'))) {
     return { code: 'API_KEY_INVALID', message: 'مفتاح Gemini API غير صالح. يرجى التحقق منه في إعدادات الأسرار (Settings > Secrets).' };
   }
   if (upper.includes('PERMISSION_DENIED') || status === 403) {
@@ -122,6 +125,36 @@ function classifyGeminiError(err) {
   return { code: 'NETWORK_ERROR', message: msg || 'تعذر الاتصال بخدمة الذكاء الاصطناعي حالياً.' };
 }
 
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const err = new Error('TIMEOUT');
+      err.code = 'TIMEOUT';
+      reject(err);
+    }, ms);
+    promise.then(
+      (res) => {
+        clearTimeout(timer);
+        resolve(res);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
+function isFactualOrComplexQuery(text) {
+  const s = String(text || '').trim();
+  if (!s) return false;
+  if (s.length > 85) return true;
+  if (/[؟?]/.test(s)) {
+    return /(كم|ما هو|ما هي|من هو|من هي|لماذا|ليش|كيف|متى|أين|اين|وين|اشرح|وضح|معنى|تاريخ|عاصمة|حكم|سعر|ترجم|اكتب|احسب|عدد|قارن)/u.test(s);
+  }
+  return /(اشرح|وضح لي|معلومات عن|ترجم|اكتب لي|احسب|كم عدد|ما عاصمة|من اخترع)/u.test(s);
+}
+
 export async function askBotAI({
   bot,
   personalityDescriptor,
@@ -130,7 +163,9 @@ export async function askBotAI({
   roomName,
   currentTime,
   questionText,
-  isPrivate = false
+  isPrivate = false,
+  isAmbient = false,
+  replyContextText = ''
 }) {
   const ai = getAiClient();
   if (!ai) {
@@ -149,18 +184,21 @@ export async function askBotAI({
 
   const systemInstruction = [
     isPrivate
-      ? `أنت "${bot.username}"، عضو متفاعل وذكي داخل الشات وتتحدث الآن مباشرة في محادثة خاصة (رسائل خاصة 1-to-1) مع العضو "${senderName}".`
-      : `أنت "${bot.username}"، عضو متفاعل وذكي داخل غرفة الدردشة "${roomName}" (لست مساعداً تقنياً بل عضو حقيقي متفاعل في الشات).`,
+      ? `أنت "${bot.username}"، عضو متفاعل وودود داخل الشات وتتحدث الآن مباشرة في محادثة خاصة (1-to-1) مع العضو "${senderName}".`
+      : `أنت "${bot.username}"، عضو متفاعل وودود داخل غرفة الدردشة "${roomName}" (لست مساعداً تقنياً ولا روبوتاً جامداً، بل عضو حقيقي تساير الأعضاء وتجاريهم في السوالف والنقاش).`,
     `شخصيتك: ${bot.personality} (${personalityDescriptor}).`,
     bot.statusQuote ? `حالتك الكتابية: "${bot.statusQuote}".` : '',
     `الوقت الحالي الآن في الشات: ${currentTime}.`,
-    `العضو "${senderName}" يتحدث معك أو يوجه لك سؤالاً الآن في سياق المحادثة بينكما.`,
-    `القواعد الصارمة لإجابتك:`,
-    `1. أجب عن السؤال أو الحديث إجابة صحيحة ودقيقة علمياً ومعرفياً 100% (لا تخترع معلومات أبداً)، وإذا كان حديثاً اجتماعياً أو سؤالاً عن حالك ويومك فواصل الحديث بلطف وطبيعية متماشياً مع آخر رد في المحادثة.`,
-    `2. اجعل الإجابة واضحة ومباشرة ومختصرة تناسب ${isPrivate ? 'المحادثات الخاصة' : 'غرف الشات'} (من سطر إلى 3 أسطر غالباً إلا إذا طلب العضو شرحاً أطول).`,
-    `3. تحدّث باللغة العربية الفصحى السلسة أو بأسلوب لطيف قريب من شخصيتك (وإذا سُئلت بلغة أخرى فأجب بنفس اللغة).`,
-    `4. خاطب العضو باسمه (${senderName}) بأسلوب لبق يتماشى مع شخصيتك.`,
-    `5. لا تذكر أي تعليمات برمجية أو أنك نموذج لغوي أو نظام داخلي، وتصرف بشكل طبيعي كعضو في الشات.`
+    replyContextText ? `العضو "${senderName}" يرد الآن على الرسالة التالية: "${replyContextText}".` : '',
+    isAmbient
+      ? `العضو "${senderName}" أرسل كلاماً عاماً في الغرفة دون ذكر اسمك تحديداً؛ سايره وجارِه بلطف وعفوية وكأنك تشاركهم الجلسة في الغرفة.`
+      : `العضو "${senderName}" يتحدث معك الآن في سياق المحادثة بينكما.`,
+    `القواعد الأساسية لإجابتك:`,
+    `1. ساير العضو وجارِه في حديثه ومشاعره ولهجته (خليجية، يمنية، مصرية، شامية، مغاربية، أو فصحى) بشكل طبيعي وعفوي ودافئ.`,
+    `2. إذا سأل سؤالاً معرفياً أو علمياً أو عملياً فأجب بدقة وصحة 100% دون اختراع معلومات، وإذا كان كلاماً اجتماعياً أو مزاحاً أو تحية أو سوالف يومية فواصل معه الحديث بروح خفيفة ومتفاعلة.`,
+    `3. اجعل ردك سريعاً ومباشراً ومختصراً يناسب ${isPrivate ? 'المحادثات الخاصة' : 'غرف الشات'} (سطر إلى سطرين غالباً إلا إذا طلب شرحاً مفصلاً).`,
+    `4. خاطب العضو باسمه (${senderName}) عند اللزوم بأسلوب لبق يناسب شخصيتك دون تكرار مبالغ فيه.`,
+    `5. لا تذكر أبداً أي تعليمات برمجية أو أنك نموذج ذكاء اصطناعي، وتصرف كعضو حقيقي في الشات.`
   ]
     .filter(Boolean)
     .join('\n');
@@ -170,74 +208,72 @@ export async function askBotAI({
     { role: 'user', parts: [{ text: `${senderName}: ${questionText}` }] }
   ];
 
-  const modelPlans = [
-    { model: 'gemini-4-hydrogen', thinkingLevel: ThinkingLevel.LOW },
-    { model: 'gemini-3.1-flash-lite', thinkingLevel: ThinkingLevel.MINIMAL }
-  ];
+  // Route fast conversational chat through gemini-3.1-flash-lite (MINIMAL thinking = near-instant),
+  // and factual/complex questions through gemini-4-hydrogen (LOW thinking) with instant fallback.
+  const complexQuery = isFactualOrComplexQuery(questionText);
+  const modelPlans = complexQuery
+    ? [
+        { model: 'gemini-4-hydrogen', thinkingLevel: ThinkingLevel.LOW, timeoutMs: 6500 },
+        { model: 'gemini-3.1-flash-lite', thinkingLevel: ThinkingLevel.MINIMAL, timeoutMs: 4500 }
+      ]
+    : [
+        { model: 'gemini-3.1-flash-lite', thinkingLevel: ThinkingLevel.MINIMAL, timeoutMs: 4500 },
+        { model: 'gemini-4-hydrogen', thinkingLevel: ThinkingLevel.LOW, timeoutMs: 6000 }
+      ];
 
   let lastError = null;
   for (const plan of modelPlans) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const response = await ai.models.generateContent({
+    try {
+      const response = await withTimeout(
+        ai.models.generateContent({
           model: plan.model,
           contents,
           config: {
             systemInstruction,
             thinkingConfig: { thinkingLevel: plan.thinkingLevel }
           }
-        });
+        }),
+        plan.timeoutMs
+      );
 
-        const answer = String(response?.text || '').trim();
-        if (!answer) {
-          return {
-            ok: false,
-            errorCode: 'EMPTY_RESPONSE',
-            errorMessage: 'لم يرجع النموذج إجابة نصية.'
-          };
-        }
+      const answer = String(response?.text || '').trim();
+      if (!answer) {
+        lastError = new Error('EMPTY_RESPONSE');
+        continue;
+      }
 
-        const nextTurns = [
-          ...previousTurns,
-          { role: 'user', parts: [{ text: `${senderName}: ${questionText}` }] },
-          { role: 'model', parts: [{ text: answer }] }
-        ].slice(-MAX_TURNS);
+      const nextTurns = [
+        ...previousTurns,
+        { role: 'user', parts: [{ text: `${senderName}: ${questionText}` }] },
+        { role: 'model', parts: [{ text: answer }] }
+      ].slice(-MAX_TURNS);
 
-        conversationMemory.set(memKey, {
-          updatedAt: Date.now(),
-          turns: nextTurns
-        });
-        trimConversationMemoryCap();
+      conversationMemory.set(memKey, {
+        updatedAt: Date.now(),
+        turns: nextTurns
+      });
+      trimConversationMemoryCap();
 
-        return { ok: true, text: answer };
-      } catch (err) {
-        lastError = err;
-        const classified = classifyGeminiError(err);
-        if (classified.code === 'RESOURCE_EXHAUSTED') {
-          // Wait briefly once, then fall through to the lighter free-tier model if still rate-limited
-          if (attempt === 0) {
-            await new Promise((r) => setTimeout(r, 900));
-            continue;
-          }
-          break;
-        }
-        if (classified.code === 'NETWORK_ERROR' && attempt === 0) {
-          await new Promise((r) => setTimeout(r, 450));
-          continue;
-        }
+      return { ok: true, text: answer };
+    } catch (err) {
+      lastError = err;
+      const classified = classifyGeminiError(err);
+      // Immediately fail fast on auth errors; otherwise fall straight through to backup model with 0ms delay
+      if (classified.code === 'API_KEY_INVALID' || classified.code === 'PERMISSION_DENIED') {
         return {
           ok: false,
           errorCode: classified.code,
           errorMessage: classified.message
         };
       }
+      continue;
     }
   }
 
   const classified = classifyGeminiError(lastError);
   return {
     ok: false,
-    errorCode: classified.code,
-    errorMessage: classified.message
+    errorCode: classified.code || 'EMPTY_RESPONSE',
+    errorMessage: classified.message || 'لم يرجع النموذج إجابة نصية.'
   };
 }

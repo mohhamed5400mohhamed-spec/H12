@@ -556,6 +556,7 @@ export interface ConnectedUser {
   isIncognito?: boolean; // وضع التصفح المتخفي
   isJailed?: boolean;
   isBot?: boolean;
+  flagNumber?: number;
   joinedAt: number;
   sessionToken?: string;
   lastActiveTime?: number;
@@ -655,6 +656,7 @@ export interface RecentLoginEntry {
   nameBannerUrl?: string;
   statusQuote?: string;
   flag: string;
+  flagNumber?: number;
   room: string;
   role: string;
   timestamp: number;
@@ -709,6 +711,7 @@ function recordRecentLogin(entry: RecentLoginEntry) {
     nameBannerUrl: entry.nameBannerUrl || user?.nameBannerUrl || member?.nameBannerUrl,
     statusQuote: resolvedQuote,
     flag: entry.flag || user?.flag || member?.flag || '🇾🇪',
+    flagNumber: entry.flagNumber || user?.flagNumber || member?.flagNumber,
     role: resolvedRole
   };
   recentLogins = [
@@ -736,6 +739,7 @@ function getRecentLogins(): RecentLoginEntry[] {
         avatar: onlineUser?.avatarUrl || member?.avatarUrl || e.avatar || e.avatarUrl,
         nameBannerUrl: onlineUser?.nameBannerUrl ?? member?.nameBannerUrl ?? e.nameBannerUrl,
         statusQuote: resolvedQuote,
+        flagNumber: onlineUser?.flagNumber || member?.flagNumber || e.flagNumber,
         role: resolvedRole
       };
     });
@@ -759,6 +763,7 @@ function getRecentLogins(): RecentLoginEntry[] {
       nameBannerUrl: session.user.nameBannerUrl || member?.nameBannerUrl,
       statusQuote: resolvedQuote,
       flag: session.user.flag || '🇾🇪',
+      flagNumber: session.user.flagNumber || member?.flagNumber,
       room: session.user.room || 'الغرفة العامة',
       role: resolvedRole,
       timestamp: session.lastActiveTime || Date.now(),
@@ -2597,6 +2602,8 @@ export interface RegisteredMemberInfo {
   displayName?: string; // الزخرفة واسم العرض القابل للتعديل من الضبط بينما يبقى اسم التسجيل الأصلي ثابتاً للدخول
   role: 'hassan' | 'admin' | 'super' | 'member' | 'guest' | string;
   flag: string;
+  flagNumber?: number;
+  flagNumbersByFlag?: Record<string, number>;
   statusQuote: string;
   avatarUrl?: string;
   likes: number;
@@ -2747,6 +2754,7 @@ export function getAllRegisteredMembersPayload(viewerLevel: number = 0, viewerSo
       displayName: onlineUser?.displayName || m.displayName || username,
       role: m.role,
       flag: m.flag,
+      flagNumber: onlineUser?.flagNumber || m.flagNumber || assignOrGetFlagNumber(username, m.flag || '🇾🇪'),
       statusQuote: m.statusQuote || 'عضو في حسان برو',
       avatarUrl: m.avatarUrl,
       likes: m.likes || 0,
@@ -3404,6 +3412,216 @@ function saveMembers() {
   }, 1000);
 }
 
+// Persistent non-repeating per-flag member numbering (#1, #2, #3... unique per flag)
+let flagCounters: Record<string, number> = {};
+try {
+  const loadedCounters = dataManager.loadSync<Record<string, number>>('flag_counters', {});
+  if (loadedCounters && typeof loadedCounters === 'object') {
+    flagCounters = loadedCounters;
+  }
+} catch (err) {
+  console.error('[Data Layer] Error loading flag_counters:', err);
+}
+
+let saveFlagCountersTimer: NodeJS.Timeout | null = null;
+function saveFlagCounters() {
+  if (saveFlagCountersTimer) return;
+  saveFlagCountersTimer = setTimeout(async () => {
+    saveFlagCountersTimer = null;
+    try {
+      await dataManager.save('flag_counters', flagCounters);
+    } catch (err) {
+      console.error('[Data Layer] Error saving flag_counters:', err);
+    }
+  }, 800);
+}
+
+function getUsedFlagNumbersForFlag(cleanFlag: string, excludeUsernameLower?: string): Set<number> {
+  const used = new Set<number>();
+  for (const [uname, m] of Object.entries(registeredMembers)) {
+    if (!m) continue;
+    if (excludeUsernameLower && uname.trim().toLowerCase() === excludeUsernameLower) continue;
+    if (m.flag === cleanFlag && typeof m.flagNumber === 'number' && m.flagNumber > 0) {
+      used.add(m.flagNumber);
+    }
+    const mapped = m.flagNumbersByFlag?.[cleanFlag];
+    if (typeof mapped === 'number' && mapped > 0) {
+      used.add(mapped);
+    }
+  }
+  for (const u of users) {
+    if (excludeUsernameLower && u.username.trim().toLowerCase() === excludeUsernameLower) continue;
+    if (u.flag === cleanFlag && typeof u.flagNumber === 'number' && u.flagNumber > 0) {
+      used.add(u.flagNumber);
+    }
+  }
+  return used;
+}
+
+export function assignOrGetFlagNumber(username: string, rawFlag?: string): number {
+  const cleanFlag = String(rawFlag || '').trim() || '🇾🇪';
+  const cleanUser = String(username || '').trim();
+  const lowerUser = cleanUser.toLowerCase();
+  const regFound = cleanUser ? getRegisteredMember(cleanUser) : null;
+  const usedByOthers = getUsedFlagNumbersForFlag(cleanFlag, lowerUser);
+
+  if (regFound) {
+    const m = regFound.member;
+    const candidate =
+      (m.flagNumbersByFlag && typeof m.flagNumbersByFlag[cleanFlag] === 'number' ? m.flagNumbersByFlag[cleanFlag] : undefined) ??
+      (m.flag === cleanFlag && typeof m.flagNumber === 'number' ? m.flagNumber : undefined);
+
+    if (typeof candidate === 'number' && candidate > 0 && !usedByOthers.has(candidate)) {
+      let dirty = false;
+      if (!m.flagNumbersByFlag) {
+        m.flagNumbersByFlag = {};
+        dirty = true;
+      }
+      if (m.flagNumbersByFlag[cleanFlag] !== candidate) {
+        m.flagNumbersByFlag[cleanFlag] = candidate;
+        dirty = true;
+      }
+      if ((m.flag === cleanFlag || !m.flag) && m.flagNumber !== candidate) {
+        m.flagNumber = candidate;
+        dirty = true;
+      }
+      if ((flagCounters[cleanFlag] || 0) < candidate) {
+        flagCounters[cleanFlag] = candidate;
+        saveFlagCounters();
+      }
+      if (dirty) saveMembers();
+      return candidate;
+    }
+  }
+
+  let maxUsed = Number(flagCounters[cleanFlag]) || 0;
+  for (const n of usedByOthers) {
+    if (n > maxUsed) maxUsed = n;
+  }
+  const nextNum = maxUsed + 1;
+  flagCounters[cleanFlag] = nextNum;
+  saveFlagCounters();
+
+  if (regFound) {
+    if (!regFound.member.flagNumbersByFlag) regFound.member.flagNumbersByFlag = {};
+    regFound.member.flagNumbersByFlag[cleanFlag] = nextNum;
+    if (!regFound.member.flag || regFound.member.flag === cleanFlag) {
+      regFound.member.flag = cleanFlag;
+      regFound.member.flagNumber = nextNum;
+    }
+    saveMembers();
+  }
+
+  return nextNum;
+}
+
+function ensureAllFlagNumbers() {
+  try {
+    const loadedCounters = dataManager.loadSync<Record<string, number>>('flag_counters', {});
+    if (loadedCounters && typeof loadedCounters === 'object') {
+      for (const [fl, val] of Object.entries(loadedCounters)) {
+        const num = Number(val) || 0;
+        if (num > (flagCounters[fl] || 0)) {
+          flagCounters[fl] = num;
+        }
+      }
+    }
+  } catch {}
+
+  const claimedByFlag = new Map<string, Set<number>>();
+  const entries = Object.entries(registeredMembers).sort(([aName, a], [bName, b]) => {
+    if (aName.toLowerCase() === 'admin') return -1;
+    if (bName.toLowerCase() === 'admin') return 1;
+    const tA = a?.lastSeen || 0;
+    const tB = b?.lastSeen || 0;
+    if (tA !== tB) return tA - tB;
+    return aName.localeCompare(bName);
+  });
+
+  let membersDirty = false;
+  let countersDirty = false;
+
+  // Pass 1: preserve valid unique numbers already assigned
+  for (const [, m] of entries) {
+    if (!m) continue;
+    const fl = String(m.flag || '').trim() || '🇾🇪';
+    if (!claimedByFlag.has(fl)) claimedByFlag.set(fl, new Set<number>());
+    const claimed = claimedByFlag.get(fl)!;
+
+    const existingNum =
+      (m.flagNumbersByFlag && typeof m.flagNumbersByFlag[fl] === 'number' ? m.flagNumbersByFlag[fl] : undefined) ??
+      (typeof m.flagNumber === 'number' ? m.flagNumber : undefined);
+
+    if (typeof existingNum === 'number' && existingNum > 0 && !claimed.has(existingNum)) {
+      claimed.add(existingNum);
+      if (m.flagNumber !== existingNum) {
+        m.flagNumber = existingNum;
+        membersDirty = true;
+      }
+      if (!m.flagNumbersByFlag) {
+        m.flagNumbersByFlag = {};
+        membersDirty = true;
+      }
+      if (m.flagNumbersByFlag[fl] !== existingNum) {
+        m.flagNumbersByFlag[fl] = existingNum;
+        membersDirty = true;
+      }
+      if ((flagCounters[fl] || 0) < existingNum) {
+        flagCounters[fl] = existingNum;
+        countersDirty = true;
+      }
+    } else if (typeof existingNum === 'number' && claimed.has(existingNum)) {
+      // Duplicate detected -> clear so Pass 2 gives a unique number
+      m.flagNumber = undefined;
+      if (m.flagNumbersByFlag) delete m.flagNumbersByFlag[fl];
+      membersDirty = true;
+    }
+  }
+
+  // Pass 2: assign sequential unique numbers to any members without one
+  for (const [, m] of entries) {
+    if (!m) continue;
+    const fl = String(m.flag || '').trim() || '🇾🇪';
+    if (!claimedByFlag.has(fl)) claimedByFlag.set(fl, new Set<number>());
+    const claimed = claimedByFlag.get(fl)!;
+
+    if (typeof m.flagNumber === 'number' && m.flagNumber > 0 && claimed.has(m.flagNumber)) {
+      continue;
+    }
+    let next = Math.max(flagCounters[fl] || 0, ...Array.from(claimed), 0) + 1;
+    while (claimed.has(next)) next++;
+    claimed.add(next);
+    flagCounters[fl] = next;
+    m.flag = fl;
+    m.flagNumber = next;
+    if (!m.flagNumbersByFlag) m.flagNumbersByFlag = {};
+    m.flagNumbersByFlag[fl] = next;
+    membersDirty = true;
+    countersDirty = true;
+  }
+
+  // Pass 3: sync to live users, sessions, and recentLogins
+  for (const u of users) {
+    const fl = String(u.flag || '').trim() || '🇾🇪';
+    u.flagNumber = assignOrGetFlagNumber(u.username, fl);
+  }
+  for (const sess of activeSessions.values()) {
+    if (sess?.user) {
+      const fl = String(sess.user.flag || '').trim() || '🇾🇪';
+      sess.user.flagNumber = assignOrGetFlagNumber(sess.user.username, fl);
+    }
+  }
+  for (const entry of recentLogins) {
+    const fl = String(entry.flag || '').trim() || '🇾🇪';
+    entry.flagNumber = assignOrGetFlagNumber(entry.username, fl);
+  }
+
+  if (membersDirty) saveMembers();
+  if (countersDirty) saveFlagCounters();
+}
+
+ensureAllFlagNumbers();
+
 // Handled centrally via dataManager.onHydrated() callback below
 
 export function pruneRoomChatHistory(roomId?: string) {
@@ -3584,6 +3802,7 @@ export function hydrateAllCollectionsFromStorage(isRehydration = false) {
     }
 
     if (isRehydration) {
+      ensureAllFlagNumbers();
       if (typeof botEngine !== 'undefined') {
         botEngine.rehydrateFromStorage(false);
       }
@@ -3633,7 +3852,8 @@ const botEngine = createBotEngine({
   getPmPairKey,
   savePrivateChatHistory,
   offlinePrivateMessages,
-  saveOfflinePrivateMessages
+  saveOfflinePrivateMessages,
+  assignOrGetFlagNumber
 });
 
 const botController = registerBotController({
@@ -5117,6 +5337,7 @@ io.on('connection', (socket) => {
           avatarUrl: member.avatarUrl,
           statusQuote: member.statusQuote || 'عضو في حسان برو',
           flag: member.flag || '🇾🇪',
+          flagNumber: assignOrGetFlagNumber(foundKey, member.flag || '🇾🇪'),
           role: member.role || 'member',
           likes: member.likes || 0,
           points: member.points || 0,
@@ -5282,6 +5503,7 @@ io.on('connection', (socket) => {
         session.user.giftBadges = memberReg.giftBadges;
         session.user.role = memberReg.role || session.user.role;
       }
+      session.user.flagNumber = assignOrGetFlagNumber(session.user.username, session.user.flag || memberReg?.flag || '🇾🇪');
 
       const clientUserAgent = (socket.handshake.headers['user-agent'] as string) || '';
       const clientDevice = parseDeviceInfo(clientUserAgent);
@@ -5311,6 +5533,7 @@ io.on('connection', (socket) => {
             users[i].nameBannerUrl = session.user.nameBannerUrl;
             users[i].giftBadges = session.user.giftBadges;
             users[i].role = session.user.role;
+            users[i].flagNumber = session.user.flagNumber;
             if (isUserJailed) {
               users[i].isJailed = true;
               users[i].isTextMuted = true;
@@ -6586,6 +6809,7 @@ io.on('connection', (socket) => {
     const reg = regResult?.member;
     const resolvedUsername = regResult?.key || cleanUsername;
     const realFlag = detectedRealFlag || flag || reg?.flag || '🇾🇪';
+    const assignedFlagNumber = assignOrGetFlagNumber(resolvedUsername, realFlag);
     const clientUserAgent = (socket.handshake.headers['user-agent'] as string) || '';
     const clientDevice = parseDeviceInfo(clientUserAgent);
 
@@ -6604,6 +6828,10 @@ io.on('connection', (socket) => {
 
     if (reg) {
       reg.deviceFingerprint = clientFingerprint;
+      reg.flag = realFlag;
+      reg.flagNumber = assignedFlagNumber;
+      if (!reg.flagNumbersByFlag) reg.flagNumbersByFlag = {};
+      reg.flagNumbersByFlag[realFlag] = assignedFlagNumber;
       if (typeof isIncognito === 'boolean') reg.isIncognito = isIncognito;
       saveMembers();
     }
@@ -6633,6 +6861,7 @@ io.on('connection', (socket) => {
       avatarUrl: reg?.avatarUrl || undefined,
       statusQuote: userQuote,
       flag: realFlag,
+      flagNumber: assignedFlagNumber,
       role: userRole,
       likes: reg ? reg.likes : 500,
       points: reg ? reg.points : 2500,
@@ -6691,6 +6920,7 @@ io.on('connection', (socket) => {
         nameBannerUrl: newUser.nameBannerUrl,
         statusQuote: newUser.statusQuote,
         flag: newUser.flag,
+        flagNumber: newUser.flagNumber,
         room: newUser.room,
         role: newUser.role,
         timestamp: Date.now(),
@@ -9275,9 +9505,7 @@ io.on('connection', (socket) => {
         socket.emit('newPrivateMessage', pm);
 
         if (isRecipientBot) {
-          if (expandedPmText || clean) {
-            botEngine.onPrivateMessage(sender, destUsername, expandedPmText || clean, pm);
-          }
+          botEngine.onPrivateMessage(sender, destUsername, expandedPmText || clean || '', pm);
         } else {
           const recipientSock = recipient ? io.sockets.sockets.get(recipient.id) : undefined;
           const isRecipientSocketAlive = Boolean(recipient && recipientSock && recipientSock.connected);

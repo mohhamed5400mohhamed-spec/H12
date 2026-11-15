@@ -86,6 +86,7 @@ export interface RecentLoginEntry {
   nameBannerUrl?: string;
   statusQuote?: string;
   flag: string;
+  flagNumber?: number;
   room: string;
   role: string;
   loginTime: string;
@@ -804,6 +805,7 @@ export default function App() {
     displayName?: string;
     role: string;
     flag: string;
+    flagNumber?: number;
     statusQuote: string;
     avatarUrl?: string;
     nameBannerUrl?: string;
@@ -3095,6 +3097,7 @@ export default function App() {
           nameBannerUrl: e.nameBannerUrl,
           statusQuote: e.statusQuote,
           flag: e.flag || '🇾🇪',
+          flagNumber: typeof e.flagNumber === 'number' ? e.flagNumber : undefined,
           room: e.room || 'الغرفة العامة',
           role: e.role || 'member',
           loginTime: e.loginTime || e.time || 'الآن',
@@ -3163,6 +3166,7 @@ export default function App() {
           avatarUrl: e.avatarUrl || e.avatar || falconIcon,
           nameBannerUrl: e.nameBannerUrl,
           flag: e.flag || '🇾🇪',
+          flagNumber: typeof e.flagNumber === 'number' ? e.flagNumber : undefined,
           room: e.room || 'الغرفة العامة',
           role: e.role || 'member',
           loginTime: e.loginTime || e.time || 'الآن',
@@ -3191,6 +3195,7 @@ export default function App() {
           nameBannerUrl: e.nameBannerUrl,
           statusQuote: e.statusQuote,
           flag: e.flag || '🇾🇪',
+          flagNumber: typeof e.flagNumber === 'number' ? e.flagNumber : undefined,
           room: e.room || 'الغرفة العامة',
           role: e.role || 'member',
           loginTime: e.loginTime || e.time || 'الآن',
@@ -5487,6 +5492,35 @@ export default function App() {
     return userAvatarMap.get(clean) || fallbackUrl || falconIcon;
   };
 
+  const userFlagNumberMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const m of allRegisteredMembers) {
+      if (m.username && typeof m.flagNumber === 'number' && m.flagNumber > 0) {
+        map.set(m.username.trim().toLowerCase(), m.flagNumber);
+      }
+    }
+    for (const u of allConnectedUsers) {
+      if (u.username && typeof u.flagNumber === 'number' && u.flagNumber > 0) {
+        map.set(u.username.trim().toLowerCase(), u.flagNumber);
+      }
+    }
+    for (const u of rosterUsers) {
+      if (u.username && typeof u.flagNumber === 'number' && u.flagNumber > 0) {
+        map.set(u.username.trim().toLowerCase(), u.flagNumber);
+      }
+    }
+    if (currentUser?.username && typeof currentUser.flagNumber === 'number' && currentUser.flagNumber > 0) {
+      map.set(currentUser.username.trim().toLowerCase(), currentUser.flagNumber);
+    }
+    return map;
+  }, [allRegisteredMembers, allConnectedUsers, rosterUsers, currentUser?.flagNumber, currentUser?.username]);
+
+  const getUserFlagNumber = (username?: string, explicitNum?: number): number | undefined => {
+    if (typeof explicitNum === 'number' && explicitNum > 0) return explicitNum;
+    if (!username) return undefined;
+    return userFlagNumberMap.get(username.trim().toLowerCase());
+  };
+
   // Open profile modal by username directly
   const openUserProfileByName = (username: string) => {
     if (!username) return;
@@ -5517,6 +5551,7 @@ export default function App() {
         nameBannerUrl: inReg.nameBannerUrl,
         statusQuote: inReg.statusQuote || '',
         flag: inReg.flag || '🇸🇦',
+        flagNumber: inReg.flagNumber,
         role: (inReg.role as any) || 'member',
         likes: inReg.likes || 0,
         points: inReg.points || 0,
@@ -6369,6 +6404,7 @@ export default function App() {
                   avatarUrl: liveUser?.avatarUrl || regMember?.avatarUrl,
                   nameBannerUrl: liveUser?.nameBannerUrl || regMember?.nameBannerUrl,
                   flag: liveUser?.flag || regMember?.flag,
+                  flagNumber: liveUser?.flagNumber || regMember?.flagNumber,
                   currentRoom: liveUser?.room || regMember?.currentRoom || 'الغرفة العامة'
                 };
               };
@@ -6450,8 +6486,13 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+                      <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
                         <span className="text-xl leading-none">{user.flag || meta.flag || '🇸🇦'}</span>
+                        {getUserFlagNumber(user.username, user.flagNumber ?? meta.flagNumber) && (
+                          <span className="text-[9px] font-black text-amber-700 bg-amber-100 border border-amber-300 px-1 py-[1px] rounded leading-none font-mono">
+                            #{getUserFlagNumber(user.username, user.flagNumber ?? meta.flagNumber)}
+                          </span>
+                        )}
                         <span className="text-[10px] text-slate-500 font-medium leading-none">
                           {formatAppRelativeTime(user.joinedAt || user.lastActiveTime)}
                         </span>
@@ -6546,8 +6587,13 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+                      <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
                         <span className="text-xl leading-none">{member.flag || meta.flag || '🇸🇦'}</span>
+                        {getUserFlagNumber(member.username, member.flagNumber ?? meta.flagNumber) && (
+                          <span className="text-[9px] font-black text-amber-700 bg-amber-100 border border-amber-300 px-1 py-[1px] rounded leading-none font-mono">
+                            #{getUserFlagNumber(member.username, member.flagNumber ?? meta.flagNumber)}
+                          </span>
+                        )}
                         <span className="text-[10px] text-slate-500 font-medium leading-none">
                           {meta.isOnline ? 'الآن' : formatAppRelativeTime(member.lastSeen)}
                         </span>
@@ -6639,8 +6685,13 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+                    <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
                       <span className="text-xl leading-none">{entry.flag || meta.flag || '🇾🇪'}</span>
+                      {getUserFlagNumber(entry.username, entry.flagNumber ?? meta.flagNumber) && (
+                        <span className="text-[9px] font-black text-amber-700 bg-amber-100 border border-amber-300 px-1 py-[1px] rounded leading-none font-mono">
+                          #{getUserFlagNumber(entry.username, entry.flagNumber ?? meta.flagNumber)}
+                        </span>
+                      )}
                       <span className="text-[10px] text-slate-500 font-medium leading-none">
                         {meta.isOnline ? 'الآن' : formatAppRelativeTime(entry.timestamp)}
                       </span>
@@ -11842,12 +11893,17 @@ export default function App() {
                             كشف
                           </button>
                         )}
-                        <span
-                          className="text-lg leading-none select-none"
+                        <div
+                          className="flex flex-col items-center justify-center leading-none select-none flex-shrink-0"
                           title={getCountryNameFromFlag(u.flag) || undefined}
                         >
-                          {u.flag}
-                        </span>
+                          <span className="text-lg leading-none">{u.flag}</span>
+                          {getUserFlagNumber(u.username, u.flagNumber) && (
+                            <span className="text-[9px] font-black text-amber-400 bg-slate-900/80 border border-amber-500/40 px-1 py-[1px] rounded mt-0.5 leading-none font-mono">
+                              #{getUserFlagNumber(u.username, u.flagNumber)}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -11964,12 +12020,17 @@ export default function App() {
                               كشف
                             </button>
                           )}
-                          <span
-                            className="text-base leading-none select-none"
+                          <div
+                            className="flex flex-col items-center justify-center leading-none select-none flex-shrink-0"
                             title={getCountryNameFromFlag(u.flag) || undefined}
                           >
-                            {u.flag}
-                          </span>
+                            <span className="text-base leading-none">{u.flag}</span>
+                            {getUserFlagNumber(u.username, u.flagNumber) && (
+                              <span className="text-[9px] font-black text-amber-400 bg-slate-900/80 border border-amber-500/40 px-1 py-[1px] rounded mt-0.5 leading-none font-mono">
+                                #{getUserFlagNumber(u.username, u.flagNumber)}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -12085,12 +12146,17 @@ export default function App() {
                             كشف
                           </button>
                         )}
-                        <span
-                          className="text-base leading-none select-none"
+                        <div
+                          className="flex flex-col items-center justify-center leading-none select-none flex-shrink-0"
                           title={getCountryNameFromFlag(u.flag) || undefined}
                         >
-                          {u.flag}
-                        </span>
+                          <span className="text-base leading-none">{u.flag}</span>
+                          {getUserFlagNumber(u.username, u.flagNumber) && (
+                            <span className="text-[9px] font-black text-amber-400 bg-slate-900/80 border border-amber-500/40 px-1 py-[1px] rounded mt-0.5 leading-none font-mono">
+                              #{getUserFlagNumber(u.username, u.flagNumber)}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -12117,6 +12183,7 @@ export default function App() {
                           avatarSeed: m.username,
                           role: m.role as any,
                           flag: m.flag,
+                          flagNumber: m.flagNumber,
                           statusQuote: m.statusQuote,
                           avatarUrl: m.avatarUrl,
                           nameBannerUrl: m.nameBannerUrl,
@@ -12208,8 +12275,15 @@ export default function App() {
                             كشف
                           </button>
                         )}
-                        <div className="flex items-center gap-1 opacity-70">
-                          <span className="text-base">{m.flag}</span>
+                        <div className="flex items-center gap-1.5 opacity-80">
+                          <div className="flex flex-col items-center justify-center leading-none">
+                            <span className="text-base leading-none">{m.flag}</span>
+                            {getUserFlagNumber(m.username, m.flagNumber) && (
+                              <span className="text-[9px] font-black text-amber-400 bg-slate-900/80 border border-amber-500/40 px-1 py-[1px] rounded mt-0.5 leading-none font-mono">
+                                #{getUserFlagNumber(m.username, m.flagNumber)}
+                              </span>
+                            )}
+                          </div>
                           {getCountryNameFromFlag(m.flag) && (
                             <span className="text-[10px] text-slate-400 font-bold whitespace-nowrap">
                               {getCountryNameFromFlag(m.flag)}
@@ -13403,7 +13477,14 @@ export default function App() {
                                   }
                                   return <span>{getUserDisplayName(username, userObj.displayName)}</span>;
                                 })()}
-                                <span>{userObj.flag}</span>
+                                <span className="inline-flex items-center gap-1">
+                                  <span>{userObj.flag}</span>
+                                  {getUserFlagNumber(username, userObj.flagNumber) && (
+                                    <span className="text-[9px] font-black text-amber-700 bg-amber-100 border border-amber-300 px-1 rounded leading-tight font-mono">
+                                      #{getUserFlagNumber(username, userObj.flagNumber)}
+                                    </span>
+                                  )}
+                                </span>
                               </div>
                               <div className="text-[11px] text-slate-500 truncate max-w-[170px] mt-0.5">
                                 {lastMsg ? (
@@ -14459,6 +14540,11 @@ export default function App() {
 
                     <span className="inline-flex items-center gap-1 text-xs bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full border border-amber-300">
                       <span>{profileTargetUser.flag}</span>
+                      {getUserFlagNumber(profileTargetUser.username, profileTargetUser.flagNumber) && (
+                        <span className="font-black text-[10px] bg-amber-200/80 text-amber-900 px-1 rounded font-mono">
+                          #{getUserFlagNumber(profileTargetUser.username, profileTargetUser.flagNumber)}
+                        </span>
+                      )}
                       {getCountryNameFromFlag(profileTargetUser.flag) && (
                         <span className="font-bold">{getCountryNameFromFlag(profileTargetUser.flag)}</span>
                       )}
