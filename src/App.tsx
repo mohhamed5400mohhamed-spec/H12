@@ -829,6 +829,33 @@ export default function App() {
   // Revealed Nicks State (كشف النكات والآي بي واسم الجهاز وبصمة الهاتف وتعداد العضويات)
   const [revealedNicksData, setRevealedNicksData] = useState<{
     targetUsername: string;
+    originalUsername?: string;
+    displayName?: string;
+    flagNumber?: number;
+    isRegisteredMember?: boolean;
+    firstRegisteredAccount?: {
+      username: string;
+      originalUsername: string;
+      displayName: string;
+      role: string;
+      isGuest: boolean;
+      flag?: string;
+      flagNumber?: number;
+    };
+    accountDetails?: Array<{
+      username: string;
+      originalUsername: string;
+      displayName: string;
+      role: string;
+      isGuest: boolean;
+      isRegistered: boolean;
+      isTarget: boolean;
+      isFirstRegistered: boolean;
+      flag?: string;
+      flagNumber?: number;
+      reason?: string;
+      isOnline?: boolean;
+    }>;
     ip: string;
     ipHistory?: string[];
     device?: string;
@@ -5382,6 +5409,11 @@ export default function App() {
       return;
     }
 
+    if (action === 'revealNicks') {
+      socket.emit('revealNicks', { targetUsername });
+      return;
+    }
+
     socket.emit('adminAction', {
       action,
       targetUsername,
@@ -8462,35 +8494,120 @@ export default function App() {
             {/* Content */}
             <div className="p-4 space-y-3.5 overflow-y-auto text-xs">
               {/* User Identity Card */}
-              <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-300 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="relative">
-                    <img
-                      src={falconIcon}
-                      alt={revealedNicksData.targetUsername}
-                      className="w-11 h-11 rounded-xl object-cover border-2 border-amber-500 shadow-xs"
-                    />
-                    {revealedNicksData.isOnline && (
-                      <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white" />
-                    )}
-                  </div>
-                  <div>
-                    <div className="font-black text-sm text-slate-900 flex items-center gap-1.5">
-                      <span>{revealedNicksData.targetUsername}</span>
-                      <span>{revealedNicksData.flag}</span>
+              <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-300 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="relative shrink-0">
+                      <img
+                        src={falconIcon}
+                        alt={revealedNicksData.targetUsername}
+                        className="w-11 h-11 rounded-xl object-cover border-2 border-amber-500 shadow-xs"
+                      />
+                      {revealedNicksData.isOnline && (
+                        <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white" />
+                      )}
                     </div>
-                    <div className="text-[10px] text-slate-500">
-                      الغرفة: {revealedNicksData.room} • الرتبة: {revealedNicksData.role}
+                    <div className="min-w-0">
+                      <div className="font-black text-sm text-slate-900 flex items-center gap-1.5 flex-wrap">
+                        <span className="truncate">{revealedNicksData.displayName || revealedNicksData.targetUsername}</span>
+                        <span>{revealedNicksData.flag}</span>
+                        {revealedNicksData.flagNumber && (
+                          <span className="text-[10px] font-black text-amber-800 bg-amber-200/80 border border-amber-400 px-1.5 py-0.2 rounded font-mono">
+                            #{revealedNicksData.flagNumber}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-slate-600">
+                        الغرفة: {revealedNicksData.room} • الرتبة: {revealedNicksData.role}
+                      </div>
                     </div>
                   </div>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
+                    revealedNicksData.isOnline ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
+                  }`}>
+                    {revealedNicksData.isOnline
+                      ? '● متصل الآن'
+                      : `● غير متصل ${revealedNicksData.lastSeen ? `(آخر ظهور: ${revealedNicksData.lastSeen})` : ''}`}
+                  </span>
                 </div>
-                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                  revealedNicksData.isOnline ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
-                }`}>
-                  {revealedNicksData.isOnline
-                    ? '● متصل الآن'
-                    : `● غير متصل ${revealedNicksData.lastSeen ? `(آخر ظهور: ${revealedNicksData.lastSeen})` : ''}`}
-                </span>
+
+                {/* Original Registration Username Box (الاسم الأصلي الذي سجلت به العضوية أول مرة) */}
+                {(() => {
+                  const origName = revealedNicksData.originalUsername || revealedNicksData.targetUsername;
+                  const loginName = revealedNicksData.targetUsername;
+                  const dispName = revealedNicksData.displayName || loginName;
+                  const hasDeco = dispName.trim() !== origName.trim();
+                  const hasRename = loginName.trim().toLowerCase() !== origName.trim().toLowerCase();
+                  return (
+                    <div className="p-2 bg-white/90 rounded-lg border border-amber-300/80 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <Key className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span className="text-[10px] font-bold text-slate-600">الاسم الأصلي للتسجيل أول مرة:</span>
+                        </div>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                          revealedNicksData.role === 'guest'
+                            ? 'bg-slate-100 text-slate-700 border border-slate-300'
+                            : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        }`}>
+                          {revealedNicksData.role === 'guest' ? 'دخول كزائر' : 'عضوية مسجلة'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 bg-slate-900 text-amber-300 px-2.5 py-1.5 rounded-md">
+                        <span className="font-black text-xs tracking-wide truncate">{origName}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(origName);
+                            showToast(`تم نسخ الاسم الأصلي للتسجيل: ${origName} 📋`, 'success');
+                          }}
+                          className="px-2 py-0.5 bg-amber-500 hover:bg-amber-600 text-black text-[10px] font-black rounded cursor-pointer transition-colors shrink-0"
+                        >
+                          نسخ الاسم
+                        </button>
+                      </div>
+                      {(hasDeco || hasRename) && (
+                        <div className="text-[10px] text-slate-600 flex flex-wrap gap-x-3 gap-y-0.5 pt-0.5">
+                          {hasDeco && (
+                            <span>✨ الزخرفة الحالية: <strong className="text-slate-900">{dispName}</strong></span>
+                          )}
+                          {hasRename && (
+                            <span>🆔 اسم الدخول الحالي: <strong className="text-slate-900">{loginName}</strong></span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* First Registered Membership on Device/IP when inspecting a secondary/guest nick */}
+                {revealedNicksData.firstRegisteredAccount &&
+                  revealedNicksData.firstRegisteredAccount.originalUsername.toLowerCase() !==
+                    (revealedNicksData.originalUsername || revealedNicksData.targetUsername).toLowerCase() && (
+                    <div className="p-2 bg-emerald-50 rounded-lg border border-emerald-300 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-black text-emerald-900 flex items-center gap-1">
+                          <span>🔑 أول عضوية أصلية مسجلة على نفس الجهاز/الـ IP:</span>
+                        </div>
+                        <div className="text-xs font-black text-emerald-950 truncate mt-0.5">
+                          {revealedNicksData.firstRegisteredAccount.originalUsername}
+                          {revealedNicksData.firstRegisteredAccount.displayName &&
+                            revealedNicksData.firstRegisteredAccount.displayName !== revealedNicksData.firstRegisteredAccount.originalUsername && (
+                              <span className="text-[10px] font-normal text-emerald-800 mr-1.5">
+                                ({revealedNicksData.firstRegisteredAccount.displayName})
+                              </span>
+                            )}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => socket?.emit('revealNicks', { targetUsername: revealedNicksData.firstRegisteredAccount!.username })}
+                        className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black rounded cursor-pointer transition-colors shrink-0"
+                      >
+                        كشفها
+                      </button>
+                    </div>
+                  )}
               </div>
 
               {/* IP Address Card with Copy Button */}
@@ -8625,29 +8742,71 @@ export default function App() {
 
                 {/* Nicknames list */}
                 <div className="flex flex-wrap gap-1.5 pt-1">
-                  {revealedNicksData.accounts.map((nick, idx) => {
-                    const isTarget = nick.toLowerCase() === revealedNicksData.targetUsername.toLowerCase();
-                    const reason = revealedNicksData.accountMatchReasons?.[nick];
+                  {((revealedNicksData.accountDetails && revealedNicksData.accountDetails.length > 0)
+                    ? revealedNicksData.accountDetails
+                    : revealedNicksData.accounts.map((nick) => ({
+                        username: nick,
+                        originalUsername: nick,
+                        displayName: nick,
+                        role: 'member',
+                        isGuest: false,
+                        isRegistered: true,
+                        isTarget: nick.toLowerCase() === revealedNicksData.targetUsername.toLowerCase(),
+                        isFirstRegistered: false,
+                        flag: undefined,
+                        flagNumber: undefined,
+                        reason: revealedNicksData.accountMatchReasons?.[nick],
+                        isOnline: false
+                      }))
+                  ).map((acc, idx) => {
+                    const hasDifferentOrig = acc.originalUsername && acc.originalUsername.trim().toLowerCase() !== acc.displayName.trim().toLowerCase();
                     return (
-                      <span
+                      <div
                         key={idx}
-                        title={reason || undefined}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 border shadow-2xs transition-all ${
-                          isTarget
+                        title={acc.reason || undefined}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex flex-col gap-0.5 border shadow-2xs transition-all ${
+                          acc.isTarget
                             ? 'bg-amber-400 text-black border-amber-500 ring-2 ring-amber-300 font-black'
+                            : acc.isFirstRegistered
+                            ? 'bg-emerald-50 text-emerald-950 border-emerald-400 ring-1 ring-emerald-300'
                             : 'bg-white text-slate-800 border-slate-300 hover:border-indigo-400'
                         }`}
                       >
-                        <span>👤 {nick}</span>
-                        {isTarget && (
-                          <span className="text-[9px] bg-black text-amber-300 px-1 rounded font-normal">الحالي</span>
-                        )}
-                        {!isTarget && reason && (
-                          <span className="text-[9px] bg-indigo-100 text-indigo-800 px-1 rounded font-medium border border-indigo-200">
-                            📱 نفس الهاتف
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>👤 {acc.originalUsername || acc.username}</span>
+                          {acc.flag && (
+                            <span className="text-[11px]">
+                              {acc.flag}
+                              {acc.flagNumber ? <span className="font-mono text-[9px] mr-0.5">#{acc.flagNumber}</span> : null}
+                            </span>
+                          )}
+                          {acc.isTarget && (
+                            <span className="text-[9px] bg-black text-amber-300 px-1 rounded font-normal">الحالي</span>
+                          )}
+                          {acc.isFirstRegistered && (
+                            <span className="text-[9px] bg-emerald-700 text-white px-1.5 py-0.2 rounded font-bold">
+                              🔑 أول عضوية مسجلة
+                            </span>
+                          )}
+                          <span className={`text-[9px] px-1 rounded font-medium border ${
+                            acc.isGuest
+                              ? 'bg-slate-100 text-slate-600 border-slate-300'
+                              : 'bg-sky-50 text-sky-800 border-sky-200'
+                          }`}>
+                            {acc.isGuest ? 'زائر' : 'عضوية'}
                           </span>
+                          {!acc.isTarget && acc.reason && (
+                            <span className="text-[9px] bg-indigo-100 text-indigo-800 px-1 rounded font-medium border border-indigo-200">
+                              📱 نفس الهاتف
+                            </span>
+                          )}
+                        </div>
+                        {hasDifferentOrig && (
+                          <div className="text-[10px] font-medium opacity-85">
+                            ✨ المزخرف: {acc.displayName}
+                          </div>
                         )}
-                      </span>
+                      </div>
                     );
                   })}
                 </div>

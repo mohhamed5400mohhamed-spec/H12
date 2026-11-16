@@ -2599,6 +2599,8 @@ const activeLiveBroadcasts: Map<string, RoomLiveBroadcast> = new Map();
 // Registered members store structure
 export interface RegisteredMemberInfo {
   password: string;
+  originalUsername?: string; // الاسم الأصلي الذي سجّل به العضو العضوية أول مرة (ثابت حتى لو تغيّر الاسم أو الزخرفة)
+  registeredAt?: number; // وقت تسجيل العضوية لأول مرة لتمييز العضوية الأصلية الأقدم
   displayName?: string; // الزخرفة واسم العرض القابل للتعديل من الضبط بينما يبقى اسم التسجيل الأصلي ثابتاً للدخول
   role: 'hassan' | 'admin' | 'super' | 'member' | 'guest' | string;
   flag: string;
@@ -2685,6 +2687,18 @@ export function getRegisteredMemberByDisplayName(displayName?: string): { key: s
   if (!lower) return null;
   for (const [k, member] of Object.entries(registeredMembers)) {
     if (member.displayName && member.displayName.trim().toLowerCase() === lower && k.toLowerCase() !== lower) {
+      return { key: k, member };
+    }
+  }
+  return null;
+}
+
+export function getRegisteredMemberByOriginalUsername(originalName?: string): { key: string; member: RegisteredMemberInfo } | null {
+  if (!originalName) return null;
+  const lower = originalName.trim().toLowerCase();
+  if (!lower) return null;
+  for (const [k, member] of Object.entries(registeredMembers)) {
+    if (member.originalUsername && member.originalUsername.trim().toLowerCase() === lower) {
       return { key: k, member };
     }
   }
@@ -2932,6 +2946,8 @@ export function recordMemberAuditConnection(username: string, clientIp: string, 
   if (!registeredMembers[foundKey]) {
     registeredMembers[foundKey] = {
       password: hashPassword('123'),
+      originalUsername: clean,
+      registeredAt: Date.now(),
       role: 'guest',
       flag: flag || '🇾🇪',
       statusQuote: 'زائر',
@@ -2947,6 +2963,7 @@ export function recordMemberAuditConnection(username: string, clientIp: string, 
     };
   } else {
     const m = registeredMembers[foundKey];
+    if (!m.originalUsername) m.originalUsername = foundKey;
     if (clientIp && clientIp !== '192.168.1.100') {
       m.ipAddress = clientIp;
       if (!Array.isArray(m.ipHistory)) m.ipHistory = [];
@@ -3359,9 +3376,17 @@ try {
     console.log('[Security] ✅ Automated migration: Upgraded stored passwords to secure bcrypt hashes.');
   }
 
-  // Re-hydrate in-memory IP, accounts and device mappings from persistent storage
+  rebuildAuditMapsFromMembers();
+} catch (err) {
+  console.error('[Data Layer] Error loading members from data layer:', err);
+}
+
+function rebuildAuditMapsFromMembers() {
   for (const [username, m] of Object.entries(registeredMembers)) {
     if (!m) continue;
+    if (!m.originalUsername) {
+      m.originalUsername = username;
+    }
     const allMemberIps = new Set<string>();
     if (m.ipAddress && m.ipAddress !== '127.0.0.1' && m.ipAddress !== '192.168.1.100') {
       allMemberIps.add(m.ipAddress);
@@ -3387,8 +3412,6 @@ try {
       m.fingerprintHistory.forEach((fp) => indexFingerprintAccount(fp, username));
     }
   }
-} catch (err) {
-  console.error('[Data Layer] Error loading members from data layer:', err);
 }
 
 function getCurrentTimeString(): string {
@@ -3802,6 +3825,7 @@ export function hydrateAllCollectionsFromStorage(isRehydration = false) {
     }
 
     if (isRehydration) {
+      rebuildAuditMapsFromMembers();
       ensureAllFlagNumbers();
       if (typeof botEngine !== 'undefined') {
         botEngine.rehydrateFromStorage(false);
@@ -5710,10 +5734,16 @@ io.on('connection', (socket) => {
   });
 
   // Reveal Nicks & Account Discovery (كشف النكات والآي بي والعضويات للأعضاء المتصلين وغير المتصلين)
-  socket.on('revealNicks', ({ targetUsername }: { targetUsername: string }) => {
-    const admin = users.find((u) => u.id === socket.id);
-    if (!admin || (!isSupremeHassan(admin) && admin.role !== 'admin' && admin.role !== 'super')) {
-      socket.emit('systemAlert', 'كشف النكات محصور بمدير النظام والمشرفين (Admin/Super).');
+  const executeRevealNicks = (admin: ConnectedUser | undefined, targetUsername: string) => {
+    if (
+      !admin ||
+      (!isSupremeHassan(admin) &&
+        admin.role !== 'admin' &&
+        admin.role !== 'super' &&
+        !hasPermission(admin.role, 'canRevealNicks') &&
+        getRoleLevel(admin.role) < 75)
+    ) {
+      socket.emit('systemAlert', 'كشف النكات محصور بمدير النظام والمشرفين المصرح لهم.');
       return;
     }
 
@@ -5721,17 +5751,32 @@ io.on('connection', (socket) => {
     if (!cleanTargetName) return;
     const lowerTarget = cleanTargetName.toLowerCase();
 
-    // 1. Check if user is currently online in memory
-    const targetUser = users.find((u) => u.username.toLowerCase() === lowerTarget);
+    // 1. Check if user is currently online in memory (match username or displayName)
+    const targetUser =
+      users.find((u) => u.username.toLowerCase() === lowerTarget) ||
+      users.find((u) => (u.displayName || '').trim().toLowerCase() === lowerTarget);
 
-    // 2. Look up member in registeredMembers (case-insensitive)
-    const regKey = Object.keys(registeredMembers).find((k) => k.toLowerCase() === lowerTarget);
-    const regMember = regKey ? registeredMembers[regKey] : undefined;
-    const finalDisplayName = regKey || targetUser?.username || cleanTargetName;
+    // 2. Look up member in registeredMembers (by login key, live username, displayName, or originalUsername)
+    const regFound =
+      getRegisteredMember(cleanTargetName) ||
+      (targetUser ? getRegisteredMember(targetUser.username) : null) ||
+      getRegisteredMemberByDisplayName(cleanTargetName) ||
+      getRegisteredMemberByOriginalUsername(cleanTargetName);
+
+    const regKey = regFound?.key;
+    const regMember = regFound?.member;
+    const resolvedLoginUsername = regKey || targetUser?.username || cleanTargetName;
+    const resolvedOriginalUsername = regMember?.originalUsername || regKey || targetUser?.username || cleanTargetName;
+    const resolvedDisplayName = targetUser?.displayName || regMember?.displayName || resolvedLoginUsername;
+    const lowerResolved = resolvedLoginUsername.toLowerCase();
+    const lowerOriginal = resolvedOriginalUsername.toLowerCase();
 
     // 3. Look up active session if present
     const sessionMatch = Array.from(activeSessions.values()).find(
-      (s) => s.user?.username?.toLowerCase() === lowerTarget
+      (s) =>
+        s.user?.username?.toLowerCase() === lowerResolved ||
+        s.user?.username?.toLowerCase() === lowerTarget ||
+        s.user?.username?.toLowerCase() === lowerOriginal
     );
 
     // 4. Collect ALL real IPs this member has ever entered with
@@ -5760,19 +5805,26 @@ io.on('connection', (socket) => {
 
     // Cross-check ipToAccountsMap
     for (const [ip, nicks] of ipToAccountsMap.entries()) {
-      if (Array.from(nicks).some((n) => n.toLowerCase() === lowerTarget)) {
+      if (
+        Array.from(nicks).some((n) => {
+          const ln = n.toLowerCase();
+          return ln === lowerTarget || ln === lowerResolved || ln === lowerOriginal;
+        })
+      ) {
         addIpIfValid(ip);
       }
     }
 
     // Cross-check ban/jail records
     for (const record of bannedRecords.values()) {
-      if (record.username.toLowerCase() === lowerTarget && record.ip) {
+      const lr = record.username.toLowerCase();
+      if ((lr === lowerTarget || lr === lowerResolved || lr === lowerOriginal) && record.ip) {
         addIpIfValid(record.ip);
       }
     }
     for (const record of jailedRecords.values()) {
-      if (record.username.toLowerCase() === lowerTarget && record.ip) {
+      const lr = record.username.toLowerCase();
+      if ((lr === lowerTarget || lr === lowerResolved || lr === lowerOriginal) && record.ip) {
         addIpIfValid(record.ip);
       }
     }
@@ -5787,25 +5839,35 @@ io.on('connection', (socket) => {
 
     // 5. Correlate and discover ALL accounts sharing ANY of these real IPs or hardware fingerprints
     const accountsSet = new Set<string>();
-    accountsSet.add(finalDisplayName);
+    const canonicalAccountKey = (rawNick: string): string => {
+      const trimmed = (rawNick || '').trim();
+      if (!trimmed) return trimmed;
+      const byKey = getRegisteredMember(trimmed);
+      if (byKey) return byKey.key;
+      const byOrig = getRegisteredMemberByOriginalUsername(trimmed);
+      if (byOrig) return byOrig.key;
+      return trimmed;
+    };
+    const addDiscoveredAccount = (rawNick: string) => {
+      const canonical = canonicalAccountKey(rawNick);
+      if (canonical) accountsSet.add(canonical);
+    };
+    addDiscoveredAccount(resolvedLoginUsername);
 
     // Correlate by all discovered real IPs
     ipHistoryList.forEach((ip) => {
-      // From in-memory map
       const mappedNicks = ipToAccountsMap.get(ip);
       if (mappedNicks) {
-        mappedNicks.forEach((nick) => accountsSet.add(nick));
+        mappedNicks.forEach((nick) => addDiscoveredAccount(nick));
       }
-      // From persistent registered members
       for (const [mName, mData] of Object.entries(registeredMembers)) {
         if (mData.ipAddress === ip || (Array.isArray(mData.ipHistory) && mData.ipHistory.includes(ip))) {
-          accountsSet.add(mName);
+          addDiscoveredAccount(mName);
         }
       }
-      // From live users
       users.forEach((u) => {
         if (u.ipAddress === ip || u.ip === ip) {
-          accountsSet.add(u.username);
+          addDiscoveredAccount(u.username);
         }
       });
     });
@@ -5835,8 +5897,14 @@ io.on('connection', (socket) => {
       (primaryIp && primaryIp !== 'غير مسجل' ? ipToFingerprintMap.get(primaryIp) : undefined) ||
       'FP-DEV-STANDARD';
 
-    // Account match metadata: account -> reason
+    // Account match metadata: canonical account -> reason
     const accountMatchReasons: Record<string, string> = {};
+    const recordMatchReason = (rawNick: string, reason: string) => {
+      const canonical = canonicalAccountKey(rawNick);
+      if (canonical && !accountMatchReasons[canonical]) {
+        accountMatchReasons[canonical] = reason;
+      }
+    };
 
     if (candidateFps.size > 0) {
       candidateFps.forEach((fpItem) => {
@@ -5849,16 +5917,16 @@ io.on('connection', (socket) => {
         const directMapped = fingerprintToAccountsMap.get(fpItem);
         if (directMapped) {
           directMapped.forEach((nick) => {
-            accountsSet.add(nick);
-            if (!accountMatchReasons[nick]) accountMatchReasons[nick] = 'بصمة الهاتف متطابقة 100%';
+            addDiscoveredAccount(nick);
+            recordMatchReason(nick, 'بصمة الهاتف متطابقة 100%');
           });
         }
         if (targetUid) {
           const uidMapped = fingerprintToAccountsMap.get(`UID:${targetUid}`);
           if (uidMapped) {
             uidMapped.forEach((nick) => {
-              accountsSet.add(nick);
-              if (!accountMatchReasons[nick]) accountMatchReasons[nick] = 'معرف الجهاز المادي (Device UID) متطابق 100% (نفس الهاتف عبر VPN)';
+              addDiscoveredAccount(nick);
+              recordMatchReason(nick, 'معرف الجهاز المادي (Device UID) متطابق 100% (نفس الهاتف عبر VPN)');
             });
           }
         }
@@ -5866,8 +5934,8 @@ io.on('connection', (socket) => {
           const coreMapped = fingerprintToAccountsMap.get(`CORE:${targetCore}`) || fingerprintToAccountsMap.get(targetCore);
           if (coreMapped) {
             coreMapped.forEach((nick) => {
-              accountsSet.add(nick);
-              if (!accountMatchReasons[nick]) accountMatchReasons[nick] = 'تطابق عتاد الهاتف الداخلي (Hardware Core) حتى مع اختلاف IP';
+              addDiscoveredAccount(nick);
+              recordMatchReason(nick, 'تطابق عتاد الهاتف الداخلي (Hardware Core) حتى مع اختلاف IP');
             });
           }
         }
@@ -5875,8 +5943,8 @@ io.on('connection', (socket) => {
           const hwMapped = fingerprintToAccountsMap.get(`HW:${targetCrossHw}`);
           if (hwMapped) {
             hwMapped.forEach((nick) => {
-              accountsSet.add(nick);
-              if (!accountMatchReasons[nick]) accountMatchReasons[nick] = 'تطابق بصمة العتاد العابرة للمتصفحات (Cross-Browser HW)';
+              addDiscoveredAccount(nick);
+              recordMatchReason(nick, 'تطابق بصمة العتاد العابرة للمتصفحات (Cross-Browser HW)');
             });
           }
         }
@@ -5885,8 +5953,8 @@ io.on('connection', (socket) => {
             const hwFullMapped = fingerprintToAccountsMap.get(`HARDWARE:${comps.os}_${comps.cores}_${comps.webglHash}_${comps.audioHash}`);
             if (hwFullMapped) {
               hwFullMapped.forEach((nick) => {
-                accountsSet.add(nick);
-                if (!accountMatchReasons[nick]) accountMatchReasons[nick] = 'تطابق كامل لمعالج الرسوميات (GPU) والصوت والأنوية (نفس الجهاز عبر VPN)';
+                addDiscoveredAccount(nick);
+                recordMatchReason(nick, 'تطابق كامل لمعالج الرسوميات (GPU) والصوت والأنوية (نفس الجهاز عبر VPN)');
               });
             }
           }
@@ -5898,10 +5966,8 @@ io.on('connection', (socket) => {
           for (const mf of mFps) {
             const result = areFingerprintsFromSameDevice(fpItem, mf);
             if (result.match) {
-              accountsSet.add(mName);
-              if (!accountMatchReasons[mName]) {
-                accountMatchReasons[mName] = `${result.reason} (${result.confidence}%)`;
-              }
+              addDiscoveredAccount(mName);
+              recordMatchReason(mName, `${result.reason} (${result.confidence}%)`);
               break;
             }
           }
@@ -5912,10 +5978,8 @@ io.on('connection', (socket) => {
           if (u.deviceFingerprint) {
             const result = areFingerprintsFromSameDevice(fpItem, u.deviceFingerprint);
             if (result.match) {
-              accountsSet.add(u.username);
-              if (!accountMatchReasons[u.username]) {
-                accountMatchReasons[u.username] = `${result.reason} (${result.confidence}%)`;
-              }
+              addDiscoveredAccount(u.username);
+              recordMatchReason(u.username, `${result.reason} (${result.confidence}%)`);
             }
           }
         });
@@ -5923,6 +5987,56 @@ io.on('connection', (socket) => {
     }
 
     const accounts = Array.from(accountsSet);
+    const memberKeysOrder = Object.keys(registeredMembers);
+
+    // Enrich every discovered account with originalUsername, displayName, registration status, and order
+    const rawAccountDetails = accounts.map((acc) => {
+      const mRes = getRegisteredMember(acc) || getRegisteredMemberByOriginalUsername(acc);
+      const mKey = mRes?.key || acc;
+      const mData = mRes?.member;
+      const liveAcc = users.find((u) => u.username.toLowerCase() === mKey.toLowerCase());
+      const accRole = liveAcc?.role || mData?.role || 'guest';
+      const isGuest = accRole === 'guest';
+      const isRegistered = Boolean(mData && !isGuest);
+      const accOriginalUsername = mData?.originalUsername || mKey;
+      const accDisplayName = liveAcc?.displayName || mData?.displayName || mKey;
+      const accFlag = liveAcc?.flag || mData?.flag || '';
+      const accFlagNumber = liveAcc?.flagNumber || mData?.flagNumber;
+      const orderIdx = memberKeysOrder.findIndex((k) => k.toLowerCase() === mKey.toLowerCase());
+      return {
+        username: mKey,
+        originalUsername: accOriginalUsername,
+        displayName: accDisplayName,
+        role: accRole,
+        isGuest,
+        isRegistered,
+        isTarget: mKey.toLowerCase() === lowerResolved,
+        isFirstRegistered: false,
+        flag: accFlag,
+        flagNumber: accFlagNumber,
+        reason: accountMatchReasons[acc] || accountMatchReasons[mKey],
+        isOnline: Boolean(liveAcc && liveAcc.presenceState !== 'offline'),
+        registeredAt: mData?.registeredAt,
+        _orderIdx: orderIdx === -1 ? Number.MAX_SAFE_INTEGER : orderIdx
+      };
+    });
+
+    // Identify the earliest / primary registered membership on this device/IP
+    const registeredCandidates = rawAccountDetails.filter((a) => a.isRegistered);
+    const poolForFirst = registeredCandidates.length > 0 ? registeredCandidates : rawAccountDetails;
+    let firstAccountCandidate = poolForFirst[0];
+    for (const candidate of poolForFirst) {
+      const candTs = candidate.registeredAt ?? Number.MAX_SAFE_INTEGER;
+      const bestTs = firstAccountCandidate.registeredAt ?? Number.MAX_SAFE_INTEGER;
+      if (candTs < bestTs || (candTs === bestTs && candidate._orderIdx < firstAccountCandidate._orderIdx)) {
+        firstAccountCandidate = candidate;
+      }
+    }
+    if (firstAccountCandidate) {
+      firstAccountCandidate.isFirstRegistered = true;
+    }
+
+    const accountDetails = rawAccountDetails.map(({ _orderIdx, ...rest }) => rest);
 
     // 6. Device, country, presence and last seen resolution
     const resolvedDevice =
@@ -5946,9 +6060,29 @@ io.on('connection', (socket) => {
       : regMember?.lastSeen
       ? new Date(regMember.lastSeen).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' })
       : 'غير متوفر';
+    const resolvedFlagNumber =
+      targetUser?.flagNumber ||
+      regMember?.flagNumber ||
+      assignOrGetFlagNumber(resolvedLoginUsername, resolvedCountry);
 
     socket.emit('revealedNicksResult', {
-      targetUsername: finalDisplayName,
+      targetUsername: resolvedLoginUsername,
+      originalUsername: resolvedOriginalUsername,
+      displayName: resolvedDisplayName,
+      flagNumber: resolvedFlagNumber,
+      isRegisteredMember: Boolean(regMember && regMember.role !== 'guest'),
+      firstRegisteredAccount: firstAccountCandidate
+        ? {
+            username: firstAccountCandidate.username,
+            originalUsername: firstAccountCandidate.originalUsername,
+            displayName: firstAccountCandidate.displayName,
+            role: firstAccountCandidate.role,
+            isGuest: firstAccountCandidate.isGuest,
+            flag: firstAccountCandidate.flag,
+            flagNumber: firstAccountCandidate.flagNumber
+          }
+        : undefined,
+      accountDetails,
       ip: primaryIp,
       ipHistory: ipHistoryList,
       device: resolvedDevice,
@@ -5967,10 +6101,15 @@ io.on('connection', (socket) => {
 
     logMonitorEvent(
       'security',
-      `كشف نكات العضو [${finalDisplayName}] بواسطة ${admin.username} (IP: ${primaryIp}, عدد الآيبيهات: ${ipHistoryList.length}, عدد العضويات: ${accounts.length}, الحالة: ${isUserOnline ? 'متصل' : 'أوفلاين'})`,
+      `كشف نكات العضو [${resolvedDisplayName}] (الأصل: ${resolvedOriginalUsername}) بواسطة ${admin.username} (IP: ${primaryIp}, عدد الآيبيهات: ${ipHistoryList.length}, عدد العضويات: ${accounts.length}, الحالة: ${isUserOnline ? 'متصل' : 'أوفلاين'})`,
       admin.username,
-      finalDisplayName
+      resolvedLoginUsername
     );
+  };
+
+  socket.on('revealNicks', ({ targetUsername }: { targetUsername: string }) => {
+    const admin = users.find((u) => u.id === socket.id);
+    executeRevealNicks(admin, targetUsername);
   });
 
 
@@ -6647,6 +6786,8 @@ io.on('connection', (socket) => {
       }
       registeredMembers[cleanUsername] = {
         password: hashPassword(password || '123'),
+        originalUsername: cleanUsername,
+        registeredAt: Date.now(),
         displayName: cleanUsername,
         role: 'member',
         flag: detectedRealFlag || flag || '🇾🇪',
@@ -6673,6 +6814,8 @@ io.on('connection', (socket) => {
       if (!existingVisitor) {
         registeredMembers[cleanUsername] = {
           password: hashPassword('123'),
+          originalUsername: cleanUsername,
+          registeredAt: Date.now(),
           displayName: cleanUsername,
           role: 'guest',
           flag: detectedRealFlag || flag || '🇾🇪',
@@ -8142,9 +8285,16 @@ io.on('connection', (socket) => {
             const regFound = getRegisteredMember(oldName);
             if (regFound) {
               const data = regFound.member;
+              if (!data.originalUsername) {
+                data.originalUsername = regFound.key;
+              }
+              if (!data.registeredAt) {
+                data.registeredAt = Date.now();
+              }
               delete registeredMembers[regFound.key];
               registeredMembers[newName] = data;
               saveMembers();
+              rebuildAuditMapsFromMembers();
             }
             for (const sess of activeSessions.values()) {
               if (sess.user && sess.user.username.toLowerCase() === oldName.toLowerCase()) {
@@ -8527,6 +8677,15 @@ io.on('connection', (socket) => {
           });
           logMonitorEvent('room', `حذف الغرفة [${roomId}] ونقل روادها إلى الغرفة العامة بواسطة ${admin.username}`, admin.username);
           socket.emit('systemAlert', `تم حذف الغرفة [${roomId}] بنجاح.`);
+        }
+        break;
+      }
+
+      // كشف النكات والآي بي والعضويات عند استدعائها من لوحة التحكم الإدارية
+      case 'revealNicks': {
+        const uName = (targetUsername || target?.username || '').trim();
+        if (uName) {
+          executeRevealNicks(admin, uName);
         }
         break;
       }
