@@ -3,6 +3,7 @@ export interface AvatarFramePreset {
   name: string;
   badge: string;
   animated: boolean;
+  svgVariant: string;
   gradient: string;
   glowColor: string;
   accentColor: string;
@@ -34,116 +35,254 @@ function svgDataUri(svg: string): string {
 export const AVATAR_FRAME_PRESETS: AvatarFramePreset[] = [
   {
     id: 'frame:royal-gold-glitter',
-    name: 'الإطار الذهبي الملكي المتلألئ',
-    badge: 'متحرك ✨',
+    svgVariant: 'royal-gold-glitter',
+    name: 'أجنحة الصقر الذهبي الملكي',
+    badge: 'أجنحة 3D ✨',
     animated: true,
     gradient: 'conic-gradient(from 0deg, #fbbf24, #fef08a, #d97706, #fde047, #b45309, #fbbf24)',
-    glowColor: 'rgba(245, 158, 11, 0.75)',
+    glowColor: 'rgba(245, 158, 11, 0.72)',
     accentColor: '#fbbf24',
     sparkles: true,
     crown: true,
-    ringStyle: 'rounded'
+    ringStyle: 'circle'
+  },
+  {
+    id: 'frame:imperial-vip',
+    svgVariant: 'imperial-vip',
+    name: 'التاج الإمبراطوري الفضي VIP',
+    badge: 'إمبراطوري 👑',
+    animated: true,
+    gradient: 'conic-gradient(from 0deg, #f8fafc, #c084fc, #e2e8f0, #94a3b8, #f8fafc)',
+    glowColor: 'rgba(192, 132, 252, 0.72)',
+    accentColor: '#e9d5ff',
+    sparkles: true,
+    crown: true,
+    ringStyle: 'circle'
   },
   {
     id: 'frame:diamond-prism',
-    name: 'إطار الألماس الكريستالي',
-    badge: 'بريق 💎',
+    svgVariant: 'diamond-prism',
+    name: 'التاج البنفسجي الكريستالي',
+    badge: 'كريستال 💎',
     animated: true,
-    gradient: 'conic-gradient(from 0deg, #e0f2fe, #38bdf8, #ffffff, #818cf8, #67e8f9, #e0f2fe)',
+    gradient: 'conic-gradient(from 0deg, #e0f2fe, #a855f7, #ffffff, #38bdf8, #c084fc, #e0f2fe)',
+    glowColor: 'rgba(168, 85, 247, 0.72)',
+    accentColor: '#c084fc',
+    sparkles: true,
+    spinFast: true,
+    ringStyle: 'circle'
+  },
+  {
+    id: 'frame:angel-halo',
+    svgVariant: 'angel-halo',
+    name: 'هالة الملاك والأجنحة البيضاء',
+    badge: 'ملائكي 🪽',
+    animated: true,
+    gradient: 'conic-gradient(from 0deg, #ffffff, #fef08a, #f8fafc, #fde047, #ffffff)',
+    glowColor: 'rgba(253, 224, 71, 0.65)',
+    accentColor: '#fef08a',
+    sparkles: true,
+    ringStyle: 'circle'
+  },
+  {
+    id: 'frame:dragon-azure',
+    svgVariant: 'dragon-azure',
+    name: 'التنين الذهبي والأمواج الزرقاء',
+    badge: 'تنين 🐉',
+    animated: true,
+    gradient: 'conic-gradient(from 0deg, #fbbf24, #38bdf8, #0284c7, #fde047, #0ea5e9, #fbbf24)',
     glowColor: 'rgba(56, 189, 248, 0.75)',
     accentColor: '#38bdf8',
     sparkles: true,
+    ringStyle: 'circle'
+  },
+  {
+    id: 'frame:solar-laurel',
+    svgVariant: 'solar-laurel',
+    name: 'شعلة الشمس والإكليل الذهبي',
+    badge: 'إكليل 🏆',
+    animated: true,
+    gradient: 'conic-gradient(from 0deg, #f59e0b, #fef08a, #ea580c, #fde047, #f59e0b)',
+    glowColor: 'rgba(245, 158, 11, 0.78)',
+    accentColor: '#fde047',
+    sparkles: true,
+    ringStyle: 'circle'
+  },
+  {
+    id: 'frame:obsidian-wings',
+    svgVariant: 'obsidian-wings',
+    name: 'أجنحة النسر الأسود الفخم',
+    badge: 'أسطوري 🦅',
+    animated: true,
+    gradient: 'conic-gradient(from 0deg, #334155, #0f172a, #94a3b8, #020617, #334155)',
+    glowColor: 'rgba(148, 163, 184, 0.55)',
+    accentColor: '#cbd5e1',
+    ringStyle: 'circle'
+  },
+  {
+    id: 'frame:ocean-orbit',
+    svgVariant: 'ocean-orbit',
+    name: 'الكوكب السماوي والمدار الأزرق',
+    badge: 'مداري 🪐',
+    animated: true,
+    gradient: 'conic-gradient(from 0deg, #0ea5e9, #38bdf8, #1d4ed8, #7dd3fc, #0ea5e9)',
+    glowColor: 'rgba(14, 165, 233, 0.8)',
+    accentColor: '#7dd3fc',
     spinFast: true,
     ringStyle: 'circle'
   },
   {
     id: 'frame:phoenix-fire',
-    name: 'لهيب العنقاء الذهبي',
+    svgVariant: 'phoenix-fire',
+    name: 'الشعلة النارية الدوارة',
     badge: 'ناري 🔥',
     animated: true,
     gradient: 'conic-gradient(from 0deg, #f97316, #ef4444, #facc15, #ea580c, #fde047, #f97316)',
-    glowColor: 'rgba(249, 115, 22, 0.8)',
-    accentColor: '#f97316',
-    sparkles: true,
+    glowColor: 'rgba(249, 115, 22, 0.82)',
+    accentColor: '#fb923c',
     spinFast: true,
-    ringStyle: 'rounded'
+    ringStyle: 'circle'
   },
   {
-    id: 'frame:aurora-rainbow',
-    name: 'الشفق الملكي المتوهج',
-    badge: 'طيف 🌈',
+    id: 'frame:rose-crystal',
+    svgVariant: 'rose-crystal',
+    name: 'القلوب الوردية المتوهجة',
+    badge: 'وردي 💖',
     animated: true,
-    gradient: 'conic-gradient(from 0deg, #f43f5e, #f59e0b, #10b981, #06b6d4, #6366f1, #ec4899, #f43f5e)',
-    glowColor: 'rgba(168, 85, 247, 0.7)',
-    accentColor: '#c084fc',
+    gradient: 'conic-gradient(from 0deg, #fb7185, #ffe4e6, #ec4899, #fda4af, #fb7185)',
+    glowColor: 'rgba(244, 114, 182, 0.72)',
+    accentColor: '#fda4af',
     sparkles: true,
     ringStyle: 'circle'
   },
   {
+    id: 'frame:silver-knight',
+    svgVariant: 'silver-knight',
+    name: 'درع المحارب الفضي الحديدي',
+    badge: 'فولاذي ⚔️',
+    animated: true,
+    gradient: 'conic-gradient(from 0deg, #e2e8f0, #334155, #f8fafc, #1e293b, #e2e8f0)',
+    glowColor: 'rgba(203, 213, 225, 0.62)',
+    accentColor: '#e2e8f0',
+    ringStyle: 'circle'
+  },
+  {
+    id: 'frame:royal-armor',
+    svgVariant: 'royal-armor',
+    name: 'الجواهر الملكية المرصعة',
+    badge: 'مرصع 💠',
+    animated: true,
+    gradient: 'conic-gradient(from 0deg, #fbbf24, #2563eb, #fde047, #1d4ed8, #fbbf24)',
+    glowColor: 'rgba(59, 130, 246, 0.72)',
+    accentColor: '#fde047',
+    ringStyle: 'circle'
+  },
+  {
+    id: 'frame:violet-blossom',
+    svgVariant: 'violet-blossom',
+    name: 'أجنحة اللؤلؤ والزهور البنفسجية',
+    badge: 'بنفسجي 🌸',
+    animated: true,
+    gradient: 'conic-gradient(from 0deg, #c084fc, #f3e8ff, #7e22ce, #d8b4fe, #c084fc)',
+    glowColor: 'rgba(168, 85, 247, 0.72)',
+    accentColor: '#e9d5ff',
+    sparkles: true,
+    ringStyle: 'circle'
+  },
+  {
+    id: 'frame:crystal-ribbon',
+    svgVariant: 'crystal-ribbon',
+    name: 'شريط الجليد والأجنحة الشفافة',
+    badge: 'جليدي ❄️',
+    animated: true,
+    gradient: 'conic-gradient(from 0deg, #bae6fd, #ffffff, #38bdf8, #e0f2fe, #bae6fd)',
+    glowColor: 'rgba(125, 211, 252, 0.72)',
+    accentColor: '#bae6fd',
+    sparkles: true,
+    ringStyle: 'circle'
+  },
+  {
+    id: 'frame:gothic-filigree',
+    svgVariant: 'gothic-filigree',
+    name: 'الزخرف الفيكتوري الفضي الداكن',
+    badge: 'ملكي ⚜️',
+    animated: true,
+    gradient: 'conic-gradient(from 0deg, #94a3b8, #0f172a, #e2e8f0, #1e293b, #94a3b8)',
+    glowColor: 'rgba(148, 163, 184, 0.6)',
+    accentColor: '#cbd5e1',
+    ringStyle: 'circle'
+  },
+  {
+    id: 'frame:ruby-crimson',
+    svgVariant: 'ruby-crimson',
+    name: 'أجنحة العنقاء والياقوت',
+    badge: 'ياقوت ❤️‍🔥',
+    animated: true,
+    gradient: 'conic-gradient(from 0deg, #dc2626, #fbbf24, #991b1b, #fca5a5, #ef4444, #dc2626)',
+    glowColor: 'rgba(220, 38, 38, 0.75)',
+    accentColor: '#fca5a5',
+    crown: true,
+    ringStyle: 'circle'
+  },
+  {
     id: 'frame:emerald-sultan',
+    svgVariant: 'emerald-sultan',
     name: 'زمرد السلطان المذهب',
-    badge: 'ملكي 🌿',
+    badge: 'زمردي 🌿',
     animated: true,
     gradient: 'conic-gradient(from 0deg, #10b981, #fbbf24, #059669, #fde047, #34d399, #10b981)',
     glowColor: 'rgba(16, 185, 129, 0.7)',
-    accentColor: '#34d399',
+    accentColor: '#6ee7b7',
     sparkles: true,
     crown: true,
-    ringStyle: 'rounded'
+    ringStyle: 'circle'
   },
   {
-    id: 'frame:rose-crystal',
-    name: 'تاج الورد الكريستالي',
-    badge: 'لامع 🌸',
+    id: 'frame:aurora-rainbow',
+    svgVariant: 'aurora-rainbow',
+    name: 'الطيف اللؤلؤي القزحي',
+    badge: 'قزحي 🌈',
     animated: true,
-    gradient: 'conic-gradient(from 0deg, #ec4899, #fbcfe8, #f43f5e, #fdf2f8, #db2777, #ec4899)',
-    glowColor: 'rgba(236, 72, 153, 0.7)',
-    accentColor: '#f472b6',
+    gradient: 'conic-gradient(from 0deg, #fbcfe8, #fde68a, #a7f3d0, #bae6fd, #ddd6fe, #fbcfe8)',
+    glowColor: 'rgba(192, 132, 252, 0.65)',
+    accentColor: '#f5d0fe',
     sparkles: true,
     ringStyle: 'circle'
   },
   {
     id: 'frame:cyber-neon',
-    name: 'نيون السايبر اللامع',
-    badge: 'نيون ⚡',
+    svgVariant: 'cyber-neon',
+    name: 'خوذة السايبر الكرومية',
+    badge: 'سايبر ⚡',
     animated: true,
-    gradient: 'conic-gradient(from 0deg, #22d3ee, #0ea5e9, #a855f7, #ec4899, #22d3ee)',
+    gradient: 'conic-gradient(from 0deg, #22d3ee, #e2e8f0, #0ea5e9, #334155, #22d3ee)',
     glowColor: 'rgba(34, 211, 238, 0.8)',
     accentColor: '#22d3ee',
     spinFast: true,
-    ringStyle: 'rounded'
+    ringStyle: 'circle'
   },
   {
     id: 'frame:silver-pearl',
-    name: 'اللؤلؤ الفضي الهادئ',
+    svgVariant: 'silver-pearl',
+    name: 'بريق اللؤلؤ والنجوم الفضية',
     badge: 'لؤلؤي 🪞',
     animated: true,
     gradient: 'conic-gradient(from 0deg, #f8fafc, #94a3b8, #e2e8f0, #cbd5e1, #ffffff, #f8fafc)',
     glowColor: 'rgba(226, 232, 240, 0.65)',
-    accentColor: '#e2e8f0',
+    accentColor: '#f8fafc',
     sparkles: true,
     ringStyle: 'circle'
   },
   {
-    id: 'frame:ruby-crimson',
-    name: 'الياقوت الأحمر الفخم',
-    badge: 'ياقوت 👑',
-    animated: true,
-    gradient: 'conic-gradient(from 0deg, #dc2626, #fbbf24, #991b1b, #fca5a5, #ef4444, #dc2626)',
-    glowColor: 'rgba(220, 38, 38, 0.75)',
-    accentColor: '#f87171',
-    crown: true,
-    ringStyle: 'rounded'
-  },
-  {
     id: 'frame:obsidian-gold',
-    name: 'الأوبسيديان المطعم بالذهب',
+    svgVariant: 'obsidian-gold',
+    name: 'إكليل الأوبسيديان المذهب',
     badge: 'فخم 🖤',
-    animated: false,
+    animated: true,
     gradient: 'linear-gradient(135deg, #1e293b 0%, #fbbf24 50%, #0f172a 100%)',
-    glowColor: 'rgba(251, 191, 36, 0.5)',
-    accentColor: '#f59e0b',
-    ringStyle: 'rounded'
+    glowColor: 'rgba(251, 191, 36, 0.58)',
+    accentColor: '#fbbf24',
+    ringStyle: 'circle'
   }
 ];
 

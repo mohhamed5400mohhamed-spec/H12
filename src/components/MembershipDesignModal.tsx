@@ -154,8 +154,8 @@ export const MembershipDesignModal: React.FC<MembershipDesignModalProps> = ({
                   className="col-start-1 row-start-1 bg-gradient-to-b from-slate-950/90 via-slate-950/35 to-transparent pointer-events-none"
                 />
               )}
-              <div className="col-start-1 row-start-1 relative z-10 self-start w-full px-3 pt-3.5 pb-3 flex items-start justify-between gap-2.5">
-                <div className="flex items-center gap-3 min-w-0">
+              <div className="col-start-1 row-start-1 relative z-10 self-start w-full px-4 pt-5 pb-3.5 flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3.5 min-w-0">
                   <AvatarWithFrame
                     src={avatarUrl}
                     alt={username}
@@ -253,7 +253,7 @@ export const MembershipDesignModal: React.FC<MembershipDesignModalProps> = ({
             )}
 
             {/* Pre-uploaded Luxury Frames Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               {AVATAR_FRAME_PRESETS.map((preset) => {
                 const isSelected = currentFrame === preset.id;
                 return (
@@ -267,14 +267,14 @@ export const MembershipDesignModal: React.FC<MembershipDesignModalProps> = ({
                       }
                       onSaveFrame(preset.id);
                     }}
-                    className={`p-2.5 rounded-xl border text-center flex flex-col items-center gap-2 transition-all cursor-pointer ${
+                    className={`pt-6 pb-3 px-2 rounded-xl border text-center flex flex-col items-center gap-3.5 transition-all cursor-pointer ${
                       isSelected
-                        ? 'bg-amber-500/20 border-amber-400 ring-2 ring-amber-400/50 shadow-md'
-                        : 'bg-slate-800/70 border-slate-700 hover:border-amber-500/60 hover:bg-slate-800'
+                        ? 'bg-gradient-to-b from-amber-500/20 to-amber-950/30 border-amber-400 ring-2 ring-amber-400/50 shadow-lg'
+                        : 'bg-gradient-to-b from-slate-800/85 to-slate-900/95 border-slate-700/90 hover:border-amber-500/60 hover:from-slate-800'
                     }`}
                   >
                     <AvatarWithFrame src={avatarUrl} alt={preset.name} frame={preset.id} size="md" />
-                    <div className="space-y-0.5 w-full">
+                    <div className="space-y-0.5 w-full pt-0.5">
                       <div className="font-bold text-[11px] text-slate-100 truncate">{preset.name}</div>
                       <div className="text-[9px] font-bold text-amber-300">{preset.badge}</div>
                     </div>

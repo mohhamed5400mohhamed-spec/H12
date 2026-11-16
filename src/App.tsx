@@ -12488,7 +12488,7 @@ export default function App() {
                             aria-hidden="true"
                             className="col-start-1 row-start-1 bg-gradient-to-b from-slate-950/90 via-slate-950/35 to-transparent pointer-events-none"
                           />
-                          <div className="col-start-1 row-start-1 relative z-10 self-start w-full px-2.5 pt-3 pb-2.5 flex items-start justify-between gap-2 min-w-0">
+                          <div className={`col-start-1 row-start-1 relative z-10 self-start w-full flex items-start justify-between gap-2 min-w-0 ${u.avatarFrame ? 'px-3.5 pt-4 pb-3' : 'px-2.5 pt-3 pb-2.5'}`}>
                             {rowInner}
                           </div>
                         </div>
@@ -12499,7 +12499,7 @@ export default function App() {
                       <div
                         key={u.id}
                         onClick={() => openUserProfile(u)}
-                        className="p-2.5 hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-between"
+                        className={`hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-between ${u.avatarFrame ? 'px-3.5 py-3.5' : 'p-2.5'}`}
                       >
                         {rowInner}
                       </div>
@@ -12633,7 +12633,7 @@ export default function App() {
                             aria-hidden="true"
                             className="col-start-1 row-start-1 bg-gradient-to-b from-slate-950/90 via-slate-950/35 to-transparent pointer-events-none"
                           />
-                          <div className="col-start-1 row-start-1 relative z-10 self-start w-full px-2.5 pt-3 pb-2.5 flex items-start justify-between gap-2 min-w-0">
+                          <div className={`col-start-1 row-start-1 relative z-10 self-start w-full flex items-start justify-between gap-2 min-w-0 ${u.avatarFrame ? 'px-3.5 pt-4 pb-3' : 'px-2.5 pt-3 pb-2.5'}`}>
                             {rowInner}
                           </div>
                         </div>
@@ -12644,7 +12644,7 @@ export default function App() {
                       <div
                         key={u.id || u.username}
                         onClick={() => openUserProfile(u)}
-                        className={`p-2.5 transition-colors cursor-pointer flex items-center justify-between ${
+                        className={`transition-colors cursor-pointer flex items-center justify-between ${u.avatarFrame ? 'px-3.5 py-3.5' : 'p-2.5'} ${
                           isSelf
                             ? 'bg-amber-500/10 hover:bg-amber-500/15 border-r-2 border-amber-500'
                             : 'hover:bg-white/5'
@@ -12784,7 +12784,7 @@ export default function App() {
                             aria-hidden="true"
                             className="col-start-1 row-start-1 bg-gradient-to-b from-slate-950/90 via-slate-950/35 to-transparent pointer-events-none"
                           />
-                          <div className="col-start-1 row-start-1 relative z-10 self-start w-full px-2.5 pt-3 pb-2.5 flex items-start justify-between gap-2 min-w-0">
+                          <div className={`col-start-1 row-start-1 relative z-10 self-start w-full flex items-start justify-between gap-2 min-w-0 ${u.avatarFrame ? 'px-3.5 pt-4 pb-3' : 'px-2.5 pt-3 pb-2.5'}`}>
                             {rowInner}
                           </div>
                         </div>
@@ -12795,7 +12795,7 @@ export default function App() {
                       <div
                         key={u.id}
                         onClick={() => openUserProfile(u)}
-                        className="p-2.5 hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-between"
+                        className={`hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-between ${u.avatarFrame ? 'px-3.5 py-3.5' : 'p-2.5'}`}
                       >
                         {rowInner}
                       </div>
@@ -12952,7 +12952,7 @@ export default function App() {
                             aria-hidden="true"
                             className="col-start-1 row-start-1 bg-gradient-to-b from-slate-950/90 via-slate-950/40 to-transparent pointer-events-none"
                           />
-                          <div className="col-start-1 row-start-1 relative z-10 self-start w-full px-2.5 pt-3 pb-2.5 flex items-start justify-between gap-2 min-w-0">
+                          <div className={`col-start-1 row-start-1 relative z-10 self-start w-full flex items-start justify-between gap-2 min-w-0 ${m.avatarFrame ? 'px-3.5 pt-4 pb-3' : 'px-2.5 pt-3 pb-2.5'}`}>
                             {rowInner}
                           </div>
                         </div>
@@ -12963,7 +12963,7 @@ export default function App() {
                       <div
                         key={m.username}
                         onClick={openOfflineProfile}
-                        className="p-2.5 hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-between opacity-80"
+                        className={`hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-between opacity-80 ${m.avatarFrame ? 'px-3.5 py-3.5' : 'p-2.5'}`}
                       >
                         {rowInner}
                       </div>
@@ -15209,8 +15209,8 @@ export default function App() {
                     />
                   </>
                 )}
-                <div className={profileCoverBg ? 'relative z-10 p-3 sm:p-4' : 'relative z-10'}>
-                <div className="relative inline-block mb-2">
+                <div className={profileCoverBg ? 'relative z-10 p-4 sm:p-5' : 'relative z-10 pt-3'}>
+                <div className={`relative inline-block ${profileTargetUser.avatarFrame ? 'mt-3 mb-4' : 'mb-2'}`}>
                   <AvatarWithFrame
                     src={profileTargetUser.avatarUrl || falconIcon}
                     alt={profileTargetUser.username}

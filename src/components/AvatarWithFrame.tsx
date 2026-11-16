@@ -1,5 +1,6 @@
 import React from 'react';
 import { getFramePreset, isCustomImageValue } from '../constants/membershipDesigns';
+import { OrnateFrameSvg } from './OrnateFrameSvg';
 
 export interface AvatarWithFrameProps {
   src: string;
@@ -16,12 +17,12 @@ export interface AvatarWithFrameProps {
   presenceTitle?: string;
 }
 
-const SIZE_CLASSES: Record<NonNullable<AvatarWithFrameProps['size']>, { box: string; pad: string; dot: string; corner: string }> = {
-  xs: { box: 'w-9 h-9', pad: 'p-[2px]', dot: 'w-2.5 h-2.5 -top-0.5 -right-0.5', corner: 'text-[8px]' },
-  sm: { box: 'w-11 h-11', pad: 'p-[2.5px]', dot: 'w-3 h-3 -top-1 -right-1', corner: 'text-[9px]' },
-  md: { box: 'w-12 h-12', pad: 'p-[3px]', dot: 'w-3 h-3 -top-1 -right-1', corner: 'text-[10px]' },
-  lg: { box: 'w-20 h-20', pad: 'p-[4px]', dot: 'w-4 h-4 bottom-0 left-0', corner: 'text-xs' },
-  xl: { box: 'w-24 h-24', pad: 'p-[5px]', dot: 'w-4 h-4 bottom-0 left-0', corner: 'text-sm' }
+const SIZE_CLASSES: Record<NonNullable<AvatarWithFrameProps['size']>, { box: string; dot: string; overlayInset: string }> = {
+  xs: { box: 'w-9 h-9', dot: 'w-2.5 h-2.5 -top-0.5 -right-0.5', overlayInset: '-inset-[24%] w-[148%] h-[148%]' },
+  sm: { box: 'w-11 h-11', dot: 'w-3 h-3 -top-0.5 -right-0.5', overlayInset: '-inset-[27%] w-[154%] h-[154%]' },
+  md: { box: 'w-12 h-12', dot: 'w-3 h-3 -top-0.5 -right-0.5', overlayInset: '-inset-[27%] w-[154%] h-[154%]' },
+  lg: { box: 'w-20 h-20', dot: 'w-4 h-4 bottom-0 left-0', overlayInset: '-inset-[27%] w-[154%] h-[154%]' },
+  xl: { box: 'w-24 h-24', dot: 'w-4 h-4 bottom-0 left-0', overlayInset: '-inset-[27%] w-[154%] h-[154%]' }
 };
 
 export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
@@ -41,8 +42,7 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
   const dim = SIZE_CLASSES[size];
   const preset = getFramePreset(frame);
   const customFrameUrl = !preset && isCustomImageValue(frame) ? frame : undefined;
-  const isCircle = preset?.ringStyle === 'circle';
-  const radiusClass = isCircle ? 'rounded-full' : size === 'lg' || size === 'xl' ? 'rounded-full' : 'rounded-lg';
+  const radiusClass = preset ? 'rounded-full' : size === 'lg' || size === 'xl' ? 'rounded-full' : 'rounded-lg';
 
   const renderPresenceDot = () => {
     if (!showPresenceDot && !isVoice) return null;
@@ -84,64 +84,36 @@ export const AvatarWithFrame: React.FC<AvatarWithFrameProps> = ({
     return null;
   };
 
-  // Case 1: Built-in animated/glittering preset frame
+  // Case 1: Built-in luxury ornate 3D SVG + animated frame preset
   if (preset) {
     return (
       <div
-        className={`relative inline-flex items-center justify-center shrink-0 ${dim.box} ${className}`}
+        className={`relative inline-flex items-center justify-center shrink-0 overflow-visible ${dim.box} ${className}`}
         style={{ filter: `drop-shadow(0 0 6px ${preset.glowColor})` }}
       >
-        {/* Rotating/Glowing metallic conic ring */}
+        {/* Subtle animated metallic halo under-ring */}
         <div
-          className={`relative w-full h-full overflow-hidden ${radiusClass} ${dim.pad} ${
-            preset.animated ? 'avatar-frame-glitter' : ''
+          aria-hidden="true"
+          className={`absolute inset-[-2px] rounded-full opacity-75 ${
+            preset.animated ? (preset.spinFast ? 'avatar-frame-spin-fast' : 'avatar-frame-spin') : ''
           }`}
-        >
-          <div
-            aria-hidden="true"
-            className={`absolute -inset-2 ${
-              preset.animated ? (preset.spinFast ? 'avatar-frame-spin-fast' : 'avatar-frame-spin') : ''
-            }`}
-            style={{ background: preset.gradient }}
+          style={{ background: preset.gradient }}
+        />
+
+        {/* Circular profile picture nested cleanly inside transparent SVG frame aperture */}
+        <div className="relative z-10 w-full h-full overflow-hidden rounded-full bg-slate-950">
+          <img
+            src={src}
+            alt={alt}
+            className={`w-full h-full object-cover rounded-full ${grayscale ? 'grayscale' : ''} ${imgClassName}`}
           />
-          <div className={`relative z-10 w-full h-full overflow-hidden bg-slate-950 ${radiusClass}`}>
-            <img
-              src={src}
-              alt={alt}
-              className={`w-full h-full object-cover ${grayscale ? 'grayscale' : ''} ${imgClassName}`}
-            />
-          </div>
         </div>
 
-        {/* Sparkling accents on corners */}
-        {preset.sparkles && (
-          <>
-            <span
-              aria-hidden="true"
-              className={`pointer-events-none select-none absolute -top-1 -left-1 z-20 leading-none avatar-frame-sparkle ${dim.corner}`}
-              style={{ color: preset.accentColor }}
-            >
-              ✦
-            </span>
-            <span
-              aria-hidden="true"
-              className={`pointer-events-none select-none absolute -bottom-1 -right-1 z-20 leading-none avatar-frame-sparkle ${dim.corner}`}
-              style={{ color: preset.accentColor, animationDelay: '0.9s' }}
-            >
-              ✦
-            </span>
-          </>
-        )}
-
-        {/* Royal crown badge for kingly presets */}
-        {preset.crown && (size === 'lg' || size === 'xl' || size === 'md') && (
-          <span
-            aria-hidden="true"
-            className="pointer-events-none select-none absolute -top-2 left-1/2 -translate-x-1/2 z-20 text-[11px] leading-none drop-shadow"
-          >
-            👑
-          </span>
-        )}
+        {/* High-detail sculpted SVG overlay (wings, crowns, dragon waves, orbiting planets, halos, VIP ribbons) */}
+        <OrnateFrameSvg
+          variant={preset.svgVariant}
+          className={`absolute z-20 ${dim.overlayInset}`}
+        />
 
         {renderPresenceDot()}
       </div>
