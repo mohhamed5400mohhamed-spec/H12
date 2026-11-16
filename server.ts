@@ -524,6 +524,7 @@ export interface ConnectedUser {
   room: string;
   avatarSeed: string;
   avatarUrl?: string;
+  avatarFrame?: string;
   statusQuote: string;
   flag: string;
   role: 'hassan' | 'admin' | 'super' | 'member' | 'guest' | string;
@@ -544,6 +545,7 @@ export interface ConnectedUser {
   textColor?: string;
   nameGradient?: string;
   profileBg?: string;
+  memberBg?: string;
   theme?: string;
   fontFamily?: string;
   wallpaper?: string;
@@ -1073,6 +1075,7 @@ function canPerformModeration(
     setSlowMode: 'canSetSlowMode',
     lockRoomVoice: 'canLockVoice',
     setRoomPassword: 'canLockRoom',
+    createRoom: 'canChangeRoomSettings',
     editRoom: 'canChangeRoomSettings',
     deleteRoom: 'canChangeRoomSettings',
     globalClearChat: 'canClearRoomChat',
@@ -1722,6 +1725,7 @@ export interface RolePermissions {
   canLockRoom?: boolean;
   canSetSlowMode?: boolean;
   canChangeRoomSettings?: boolean;
+  canEditRoomBanner?: boolean;
 
   // 2. Microphone & Audio (المايكروفون والصوتيات)
   canTakeMic?: boolean;
@@ -1749,6 +1753,8 @@ export interface RolePermissions {
   canEditPoints?: boolean;
   canAssignBanner?: boolean;
   canAssignBadge?: boolean;
+  canUseAvatarFrame?: boolean;
+  canUseMemberBg?: boolean;
   canChangeMemberPassword?: boolean;
   canMoveUsers?: boolean;
   canChangeRoles?: boolean;
@@ -1787,6 +1793,7 @@ export let rolePermissions: Record<string, RolePermissions> = {
     canLockRoom: true,
     canSetSlowMode: true,
     canChangeRoomSettings: true,
+    canEditRoomBanner: true,
     canTakeMic: true,
     canPullMic: true,
     canMuteVoice: true,
@@ -1808,6 +1815,8 @@ export let rolePermissions: Record<string, RolePermissions> = {
     canEditPoints: true,
     canAssignBanner: true,
     canAssignBadge: true,
+    canUseAvatarFrame: true,
+    canUseMemberBg: true,
     canChangeMemberPassword: true,
     canMoveUsers: true,
     canChangeRoles: true,
@@ -1838,6 +1847,7 @@ export let rolePermissions: Record<string, RolePermissions> = {
     canLockRoom: true,
     canSetSlowMode: true,
     canChangeRoomSettings: true,
+    canEditRoomBanner: true,
     canTakeMic: true,
     canPullMic: true,
     canMuteVoice: true,
@@ -1859,6 +1869,8 @@ export let rolePermissions: Record<string, RolePermissions> = {
     canEditPoints: true,
     canAssignBanner: true,
     canAssignBadge: true,
+    canUseAvatarFrame: true,
+    canUseMemberBg: true,
     canChangeMemberPassword: true,
     canMoveUsers: true,
     canChangeRoles: true,
@@ -1889,6 +1901,7 @@ export let rolePermissions: Record<string, RolePermissions> = {
     canLockRoom: true,
     canSetSlowMode: true,
     canChangeRoomSettings: true,
+    canEditRoomBanner: true,
     canTakeMic: true,
     canPullMic: true,
     canMuteVoice: true,
@@ -1910,6 +1923,8 @@ export let rolePermissions: Record<string, RolePermissions> = {
     canEditPoints: false,
     canAssignBanner: true,
     canAssignBadge: true,
+    canUseAvatarFrame: true,
+    canUseMemberBg: true,
     canChangeMemberPassword: false,
     canMoveUsers: true,
     canChangeRoles: false,
@@ -1940,6 +1955,7 @@ export let rolePermissions: Record<string, RolePermissions> = {
     canLockRoom: false,
     canSetSlowMode: false,
     canChangeRoomSettings: false,
+    canEditRoomBanner: false,
     canTakeMic: true,
     canPullMic: false,
     canMuteVoice: false,
@@ -1961,6 +1977,8 @@ export let rolePermissions: Record<string, RolePermissions> = {
     canEditPoints: false,
     canAssignBanner: false,
     canAssignBadge: false,
+    canUseAvatarFrame: false,
+    canUseMemberBg: false,
     canChangeMemberPassword: false,
     canMoveUsers: false,
     canChangeRoles: false,
@@ -1991,6 +2009,7 @@ export let rolePermissions: Record<string, RolePermissions> = {
     canLockRoom: false,
     canSetSlowMode: false,
     canChangeRoomSettings: false,
+    canEditRoomBanner: false,
     canTakeMic: false,
     canPullMic: false,
     canMuteVoice: false,
@@ -2012,6 +2031,8 @@ export let rolePermissions: Record<string, RolePermissions> = {
     canEditPoints: false,
     canAssignBanner: false,
     canAssignBadge: false,
+    canUseAvatarFrame: false,
+    canUseMemberBg: false,
     canChangeMemberPassword: false,
     canMoveUsers: false,
     canChangeRoles: false,
@@ -2061,10 +2082,11 @@ export function hasPermission(roleId?: string, permKey?: string): boolean {
   if (cleanRole === 'super') {
     const superDefaults = new Set([
       'canSendText', 'canSendMedia', 'canSendVoiceNotes', 'canDeleteMessage', 'canDeleteMessages',
-      'canPinMessage', 'canClearRoomChat', 'canLockRoom', 'canSetSlowMode', 'canChangeRoomSettings',
+      'canPinMessage', 'canClearRoomChat', 'canLockRoom', 'canSetSlowMode', 'canChangeRoomSettings', 'canEditRoomBanner',
       'canTakeMic', 'canPullMic', 'canMuteVoice', 'canLockVoice', 'canStartLive',
       'canWarn', 'canMute', 'canMuteText', 'canKick', 'canTempBan', 'canBan', 'canUnban', 'canJail', 'canUnjail',
       'canEditMemberProfile', 'canEditMemberData', 'canDeleteAvatar', 'canAssignBanner', 'canAssignBadge',
+      'canUseAvatarFrame', 'canUseMemberBg',
       'canMoveUsers', 'canAccessControlPanel', 'canFilter', 'canRevealNicks', 'canViewAuditLogs',
       'canBroadcast', 'canGhostLogin', 'canManageShortcuts', 'canChangeGlobalTheme', 'canPostWall',
       'canDeleteWallPost', 'canPrivateChat', 'canPrivateCall', 'canDeleteAccounts', 'canDeleteAccount'
@@ -2101,8 +2123,18 @@ export function loadRolePermissions() {
       Object.assign(rolePermissions, parsed);
       for (const r of ['hassan', 'admin', 'super', 'member', 'guest']) {
         if (rolePermissions[r]) {
+          const isStaff = r === 'hassan' || r === 'admin' || r === 'super';
           if (rolePermissions[r].canGhostLogin === undefined) {
-            rolePermissions[r].canGhostLogin = (r === 'hassan' || r === 'admin' || r === 'super');
+            rolePermissions[r].canGhostLogin = isStaff;
+          }
+          if (rolePermissions[r].canUseAvatarFrame === undefined) {
+            rolePermissions[r].canUseAvatarFrame = isStaff;
+          }
+          if (rolePermissions[r].canUseMemberBg === undefined) {
+            rolePermissions[r].canUseMemberBg = isStaff;
+          }
+          if (rolePermissions[r].canEditRoomBanner === undefined) {
+            rolePermissions[r].canEditRoomBanner = isStaff;
           }
         }
       }
@@ -2608,6 +2640,7 @@ export interface RegisteredMemberInfo {
   flagNumbersByFlag?: Record<string, number>;
   statusQuote: string;
   avatarUrl?: string;
+  avatarFrame?: string;
   likes: number;
   points: number;
   honorBadge?: string;
@@ -2621,6 +2654,7 @@ export interface RegisteredMemberInfo {
   textColor?: string;
   nameGradient?: string;
   profileBg?: string;
+  memberBg?: string;
   theme?: string;
   fontFamily?: string;
   wallpaper?: string;
@@ -2770,7 +2804,10 @@ export function getAllRegisteredMembersPayload(viewerLevel: number = 0, viewerSo
       flag: m.flag,
       flagNumber: onlineUser?.flagNumber || m.flagNumber || assignOrGetFlagNumber(username, m.flag || '🇾🇪'),
       statusQuote: m.statusQuote || 'عضو في حسان برو',
-      avatarUrl: m.avatarUrl,
+      avatarUrl: onlineUser?.avatarUrl ?? m.avatarUrl,
+      avatarFrame: onlineUser?.avatarFrame ?? m.avatarFrame ?? '',
+      memberBg: onlineUser?.memberBg ?? m.memberBg ?? onlineUser?.profileBg ?? m.profileBg ?? '',
+      profileBg: onlineUser?.profileBg ?? m.profileBg ?? m.memberBg ?? '',
       likes: m.likes || 0,
       points: m.points || 0,
       honorBadge: m.honorBadge,
@@ -5072,17 +5109,27 @@ io.on('connection', (socket) => {
   }) => {
     const user = users.find((u) => u.id === socket.id);
     if (!user) return;
+    if (profileBg !== undefined && !isSupremeHassan(user) && user.role !== 'admin' && getRoleLevel(user.role) < getRoleLevel('admin') && !hasPermission(user.role, 'canUseMemberBg')) {
+      socket.emit('systemAlert', 'ليس لديك صلاحية استخدام أو تغيير خلفية العضوية 🔒');
+      return;
+    }
     if (nameColor !== undefined) user.nameColor = nameColor;
     if (textColor !== undefined) user.textColor = textColor;
     if (nameGradient !== undefined) user.nameGradient = nameGradient;
-    if (profileBg !== undefined) user.profileBg = profileBg;
+    if (profileBg !== undefined) {
+      user.profileBg = profileBg || undefined;
+      user.memberBg = profileBg || undefined;
+    }
 
     const regStyleFound = getRegisteredMember(user.username);
     if (regStyleFound) {
       if (nameColor !== undefined) (regStyleFound.member as any).nameColor = nameColor;
       if (textColor !== undefined) (regStyleFound.member as any).textColor = textColor;
       if (nameGradient !== undefined) (regStyleFound.member as any).nameGradient = nameGradient;
-      if (profileBg !== undefined) (regStyleFound.member as any).profileBg = profileBg;
+      if (profileBg !== undefined) {
+        (regStyleFound.member as any).profileBg = profileBg || undefined;
+        (regStyleFound.member as any).memberBg = profileBg || undefined;
+      }
       saveMembers();
     }
 
@@ -5092,13 +5139,113 @@ io.on('connection', (socket) => {
       nameColor: user.nameColor,
       textColor: user.textColor,
       nameGradient: user.nameGradient,
-      profileBg: user.profileBg
+      profileBg: user.profileBg,
+      memberBg: user.memberBg,
+      avatarFrame: user.avatarFrame
     });
 
     if (user.room) {
       broadcastRoomUsers(user.room);
     }
+    broadcastAllUsers();
+    broadcastAllRegisteredMembers();
     socket.emit('systemAlert', 'تم حفظ وتحديث تنسيق اسمك ولون خطك للجميع بنجاح ✨');
+  });
+
+  // Membership Design Updates (تصميم العضوية: إطار الصورة الشخصية + خلفية العضوية والبروفايل)
+  socket.on('updateMembershipDesign', async ({
+    avatarFrame,
+    memberBg
+  }: {
+    avatarFrame?: string;
+    memberBg?: string;
+  }) => {
+    const user = users.find((u) => u.id === socket.id);
+    if (!user) return;
+
+    const isPrivilegedAdmin = isSupremeHassan(user) || user.role === 'admin' || getRoleLevel(user.role) >= getRoleLevel('admin');
+
+    if (avatarFrame !== undefined && !isPrivilegedAdmin && !hasPermission(user.role, 'canUseAvatarFrame')) {
+      socket.emit('systemAlert', 'ليس لديك صلاحية استخدام أو تغيير إطار الصورة الشخصية 🔒');
+      return;
+    }
+
+    if (memberBg !== undefined && !isPrivilegedAdmin && !hasPermission(user.role, 'canUseMemberBg')) {
+      socket.emit('systemAlert', 'ليس لديك صلاحية استخدام أو تغيير خلفية العضوية والبروفايل 🔒');
+      return;
+    }
+
+    let nextFrame: string | undefined = user.avatarFrame;
+    if (avatarFrame !== undefined) {
+      const trimmedFrame = String(avatarFrame || '').trim();
+      if (!trimmedFrame) {
+        nextFrame = undefined;
+      } else if (trimmedFrame.startsWith('frame:')) {
+        nextFrame = sanitizeText(trimmedFrame);
+      } else {
+        const persisted = await ensureMediaUrlNotBase64(trimmedFrame);
+        nextFrame = persisted || trimmedFrame;
+      }
+      user.avatarFrame = nextFrame;
+    }
+
+    let nextBg: string | undefined = user.memberBg ?? user.profileBg;
+    if (memberBg !== undefined) {
+      const trimmedBg = String(memberBg || '').trim();
+      if (!trimmedBg) {
+        nextBg = undefined;
+      } else if (trimmedBg.startsWith('bg:')) {
+        nextBg = sanitizeText(trimmedBg);
+      } else {
+        const persisted = await ensureMediaUrlNotBase64(trimmedBg);
+        nextBg = persisted || trimmedBg;
+      }
+      user.memberBg = nextBg;
+      user.profileBg = nextBg;
+    }
+
+    const regMember = getRegisteredMember(user.username);
+    if (regMember) {
+      if (avatarFrame !== undefined) regMember.member.avatarFrame = nextFrame;
+      if (memberBg !== undefined) {
+        regMember.member.memberBg = nextBg;
+        regMember.member.profileBg = nextBg;
+      }
+      saveMembers();
+    }
+
+    if (user.sessionToken && activeSessions.has(user.sessionToken)) {
+      const sess = activeSessions.get(user.sessionToken)!;
+      if (avatarFrame !== undefined) sess.user.avatarFrame = nextFrame;
+      if (memberBg !== undefined) {
+        sess.user.memberBg = nextBg;
+        sess.user.profileBg = nextBg;
+      }
+      persistActiveSessions();
+    }
+
+    io.emit('userStyleUpdated', {
+      username: user.username,
+      displayName: user.displayName || user.username,
+      avatarFrame: user.avatarFrame || '',
+      memberBg: user.memberBg || '',
+      profileBg: user.profileBg || ''
+    });
+
+    if (user.room) {
+      broadcastRoomUsers(user.room);
+    }
+    broadcastAllUsers();
+    broadcastAllRegisteredMembers();
+    socket.emit('profileUpdated', { user });
+
+    if (avatarFrame !== undefined && memberBg === undefined) {
+      socket.emit('systemAlert', nextFrame ? 'تم تطبيق إطار العضوية وتحديثه للجميع ✨' : 'تمت إزالة إطار الصورة الشخصية ✓');
+    } else if (memberBg !== undefined && avatarFrame === undefined) {
+      socket.emit('systemAlert', nextBg ? 'تم تطبيق خلفية العضوية والبروفايل للجميع 🖼️✨' : 'تمت إزالة خلفية العضوية ✓');
+    } else {
+      socket.emit('systemAlert', 'تم حفظ تصميم عضويتك ومزامنته للجميع بنجاح ✨');
+    }
   });
 
   // Personal User Appearance Preferences (تحديث وحفظ تفضيلات المظهر الشخصي للمستخدم فقط في حسابه بقاعدة البيانات)
@@ -5359,6 +5506,7 @@ io.on('connection', (socket) => {
           room: room || 'الغرفة العامة',
           avatarSeed: foundKey,
           avatarUrl: member.avatarUrl,
+          avatarFrame: member.avatarFrame,
           statusQuote: member.statusQuote || 'عضو في حسان برو',
           flag: member.flag || '🇾🇪',
           flagNumber: assignOrGetFlagNumber(foundKey, member.flag || '🇾🇪'),
@@ -5378,7 +5526,8 @@ io.on('connection', (socket) => {
           nameColor: member.nameColor,
           textColor: member.textColor,
           nameGradient: member.nameGradient,
-          profileBg: member.profileBg,
+          profileBg: member.profileBg || member.memberBg,
+          memberBg: member.memberBg || member.profileBg,
           nameBannerUrl: member.nameBannerUrl,
           giftBadges: member.giftBadges || [],
           isIncognito: typeof isIncognito === 'boolean' ? isIncognito : member.isIncognito,
@@ -6277,10 +6426,11 @@ io.on('connection', (socket) => {
   });
 
   // Update Room Details from in-room settings
-  socket.on('updateRoomDetails', (data: {
+  socket.on('updateRoomDetails', async (data: {
     roomId: string;
     name?: string;
     desc?: string;
+    bannerUrl?: string;
     isPasswordProtected?: boolean;
     password?: string;
     isChatLocked?: boolean;
@@ -6293,53 +6443,79 @@ io.on('connection', (socket) => {
     wallpaper?: string;
   }) => {
     const admin = users.find((u) => u.id === socket.id);
-    const isAuthorized = admin && (
+    const hasBannerPerm = Boolean(admin && (
+      isSupremeHassan(admin) ||
+      admin.role === 'admin' ||
+      admin.role === 'super' ||
+      hasPermission(admin.role, 'canEditRoomBanner') ||
+      hasPermission(admin.role, 'canChangeRoomSettings') ||
+      getRoleLevel(admin.role) >= 75
+    ));
+    const isAuthorized = Boolean(admin && (
       isSupremeHassan(admin) ||
       admin.role === 'admin' ||
       admin.role === 'super' ||
       hasPermission(admin.role, 'canChangeRoomSettings') ||
       hasPermission(admin.role, 'canAccessControlPanel') ||
       getRoleLevel(admin.role) >= 75
-    );
+    ));
 
-    if (!isAuthorized) {
-      socket.emit('systemAlert', 'عذراً، تعديل إعدادات الغرفة محصور بالإدارة وأصحاب الصلاحيات فقط 🔒');
+    if (!isAuthorized && !(data.bannerUrl !== undefined && hasBannerPerm)) {
+      socket.emit('systemAlert', 'ليس لديك صلاحية تعديل إعدادات الغرفة أو بنرها 🔒');
       logMonitorEvent('security', `محاولة غير مصرح بها لتعديل إعدادات الغرفة [${data.roomId}] بواسطة [${admin?.username || 'مجهول'}] (الرتبة: ${admin?.role || 'غير معروف'})`, admin?.username || 'مجهول');
       return;
     }
-    const room = chatRooms.find((r) => r.id === data.roomId);
+
+    const room = chatRooms.find((r) => r.id === data.roomId || r.name === data.roomId);
     if (room) {
-      if (data.name !== undefined) room.name = sanitizeText(data.name);
-      if (data.desc !== undefined) room.desc = sanitizeText(data.desc);
-      if (data.isPasswordProtected === false) {
-        room.isPasswordProtected = false;
-        delete room.password;
-      } else if (data.isPasswordProtected === true || (data.password && data.password.trim())) {
-        if (data.password && data.password.trim()) {
-          room.isPasswordProtected = true;
-          room.password = sanitizeText(data.password.trim());
+      if (isAuthorized) {
+        if (data.name !== undefined) room.name = sanitizeText(data.name);
+        if (data.desc !== undefined) room.desc = sanitizeText(data.desc);
+        if (data.isPasswordProtected === false) {
+          room.isPasswordProtected = false;
+          delete room.password;
+        } else if (data.isPasswordProtected === true || (data.password && data.password.trim())) {
+          if (data.password && data.password.trim()) {
+            room.isPasswordProtected = true;
+            room.password = sanitizeText(data.password.trim());
+          }
+        }
+      }
+      if (data.bannerUrl !== undefined) {
+        if (!hasBannerPerm) {
+          socket.emit('systemAlert', 'ليس لديك صلاحية تغيير بنر الغرفة 🔒');
+        } else {
+          const cleanBanner = String(data.bannerUrl || '').trim();
+          if (!cleanBanner) {
+            delete room.bannerUrl;
+          } else {
+            const safeBanner = await ensureMediaUrlNotBase64(cleanBanner);
+            room.bannerUrl = safeBanner || cleanBanner;
+          }
         }
       }
       saveChatRooms();
       broadcastRoomsUpdate();
     }
-    const curSettings = getRoomSettings(data.roomId);
-    if (data.isChatLocked !== undefined) curSettings.isChatLocked = data.isChatLocked;
-    if (data.slowModeSeconds !== undefined) curSettings.slowModeSeconds = data.slowModeSeconds;
-    if (data.isVoiceLocked !== undefined) curSettings.isVoiceLocked = data.isVoiceLocked;
-    if (data.showDeletedNotice !== undefined && (isSupremeHassan(admin) || admin.role === 'admin' || admin.role === 'super')) {
-      curSettings.showDeletedNotice = Boolean(data.showDeletedNotice);
+    if (isAuthorized) {
+      const curSettings = getRoomSettings(data.roomId);
+      if (data.isChatLocked !== undefined) curSettings.isChatLocked = data.isChatLocked;
+      if (data.slowModeSeconds !== undefined) curSettings.slowModeSeconds = data.slowModeSeconds;
+      if (data.isVoiceLocked !== undefined) curSettings.isVoiceLocked = data.isVoiceLocked;
+      if (data.showDeletedNotice !== undefined && admin && (isSupremeHassan(admin) || admin.role === 'admin' || admin.role === 'super')) {
+        curSettings.showDeletedNotice = Boolean(data.showDeletedNotice);
+      }
+      if (data.pinnedTopic !== undefined) {
+        curSettings.pinnedTopic = sanitizeText(data.pinnedTopic);
+        io.to(data.roomId).emit('pinnedTopic', curSettings.pinnedTopic);
+      }
+      if (data.welcomeMessage !== undefined) curSettings.welcomeMessage = sanitizeText(data.welcomeMessage);
+      if (data.welcomeEnabled !== undefined) curSettings.welcomeEnabled = Boolean(data.welcomeEnabled);
+      if (data.wallpaper !== undefined) curSettings.wallpaper = data.wallpaper;
+      saveRoomSettings();
+      io.to(data.roomId).emit('roomSettingsUpdated', { room: data.roomId, settings: curSettings });
     }
-    if (data.pinnedTopic !== undefined) {
-      curSettings.pinnedTopic = sanitizeText(data.pinnedTopic);
-      io.to(data.roomId).emit('pinnedTopic', curSettings.pinnedTopic);
-    }
-    if (data.welcomeMessage !== undefined) curSettings.welcomeMessage = sanitizeText(data.welcomeMessage);
-    if (data.welcomeEnabled !== undefined) curSettings.welcomeEnabled = Boolean(data.welcomeEnabled);
-    if (data.wallpaper !== undefined) curSettings.wallpaper = data.wallpaper;
-    saveRoomSettings();
-    io.to(data.roomId).emit('roomSettingsUpdated', { room: data.roomId, settings: curSettings });
-    logMonitorEvent('room', `عدل المشرف [${admin.username}] إعدادات غرفة [${data.roomId}]`, admin.username);
+    logMonitorEvent('room', `عدل المشرف [${admin!.username}] إعدادات غرفة [${data.roomId}]`, admin!.username);
     socket.emit('systemAlert', `تم حفظ وتحديث إعدادات غرفة [${data.roomId}] بنجاح ⚙️`);
   });
 
@@ -7002,6 +7178,7 @@ io.on('connection', (socket) => {
       room: finalTargetRoom,
       avatarSeed: resolvedUsername,
       avatarUrl: reg?.avatarUrl || undefined,
+      avatarFrame: reg?.avatarFrame || undefined,
       statusQuote: userQuote,
       flag: realFlag,
       flagNumber: assignedFlagNumber,
@@ -7027,7 +7204,8 @@ io.on('connection', (socket) => {
       nameColor: (reg as any)?.nameColor || undefined,
       textColor: (reg as any)?.textColor || undefined,
       nameGradient: (reg as any)?.nameGradient || undefined,
-      profileBg: (reg as any)?.profileBg || undefined,
+      profileBg: (reg as any)?.profileBg || (reg as any)?.memberBg || undefined,
+      memberBg: (reg as any)?.memberBg || (reg as any)?.profileBg || undefined,
       theme: (reg as any)?.theme || undefined,
       fontFamily: (reg as any)?.fontFamily || undefined,
       wallpaper: (reg as any)?.wallpaper || undefined,
@@ -7579,7 +7757,7 @@ io.on('connection', (socket) => {
   });
 
   // ================= ADMIN & MODERATION POWERS =================
-  socket.on('adminAction', ({
+  socket.on('adminAction', async ({
     action,
     targetUsername,
     value,
@@ -7603,7 +7781,7 @@ io.on('connection', (socket) => {
 
     const readOnlyActions = ['getRoomStats', 'getBannedList', 'getMonitorLogs'];
     const actionsWithoutTarget = [
-      'unban', 'globalBroadcast', 'broadcastMessage', 'globalClearChat', 'pullAllUsers', 'editRoom', 'deleteRoom', 
+      'unban', 'globalBroadcast', 'broadcastMessage', 'globalClearChat', 'pullAllUsers', 'createRoom', 'editRoom', 'deleteRoom', 
       'lockRoomChat', 'setSlowMode', 'lockRoomVoice', 'setRoomPassword', 'adminSiren',
       ...readOnlyActions
     ];
@@ -8627,11 +8805,55 @@ io.on('connection', (socket) => {
         break;
       }
 
+      // إنشاء غرفة جديدة من لوحة التحكم (Create Room - Admin Only)
+      case 'createRoom': {
+        if (value && typeof value === 'object') {
+          const { name, desc, password, voiceLimit, bannerUrl } = value;
+          const cleanName = sanitizeText(name);
+          if (!cleanName) break;
+          if (chatRooms.some((r) => r.id.toLowerCase() === cleanName.toLowerCase())) {
+            socket.emit('systemAlert', `توجد غرفة بنفس الاسم [${cleanName}] بالفعل.`);
+            break;
+          }
+          const hasBannerPerm =
+            isSupremeHassan(admin) ||
+            admin.role === 'admin' ||
+            getRoleLevel(admin.role) >= getRoleLevel('admin') ||
+            hasPermission(admin.role, 'canEditRoomBanner') ||
+            hasPermission(admin.role, 'canChangeRoomSettings');
+
+          let safeBannerUrl: string | undefined;
+          if (bannerUrl && String(bannerUrl).trim()) {
+            if (!hasBannerPerm) {
+              socket.emit('systemAlert', 'ليس لديك صلاحية تعيين بنر للغرفة 🔒');
+            } else {
+              safeBannerUrl = await ensureMediaUrlNotBase64(String(bannerUrl).trim());
+            }
+          }
+          const newRoom: ChatRoom = {
+            id: cleanName,
+            name: `Room | ${cleanName}`,
+            desc: sanitizeText(desc) || 'غرفة جديدة في حسان برو',
+            isPasswordProtected: Boolean(password),
+            password: password ? sanitizeText(password) : undefined,
+            bannerUrl: safeBannerUrl || undefined,
+            voiceLimit: Number(voiceLimit) || 30,
+            activeVoiceCount: 0
+          };
+          chatRooms.push(newRoom);
+          saveChatRooms();
+          broadcastRoomsUpdate();
+          logMonitorEvent('room', `أنشأ [${admin.username}] غرفة جديدة [${cleanName}]`, admin.username);
+          socket.emit('systemAlert', `تم إنشاء غرفة [${cleanName}] بنجاح!`);
+        }
+        break;
+      }
+
       // تعديل بيانات الغرفة (Edit Room - Admin Only)
       case 'editRoom': {
         if (value && typeof value === 'object') {
-          const { roomId, name, desc, password, voiceLimit } = value;
-          const room = chatRooms.find((r) => r.id === roomId);
+          const { roomId, name, desc, password, voiceLimit, bannerUrl } = value;
+          const room = chatRooms.find((r) => r.id === roomId || r.name === roomId);
           if (room) {
             if (name) room.name = sanitizeText(name);
             if (desc !== undefined) room.desc = sanitizeText(desc);
@@ -8643,6 +8865,25 @@ io.on('connection', (socket) => {
               } else {
                 room.isPasswordProtected = false;
                 delete room.password;
+              }
+            }
+            if (bannerUrl !== undefined) {
+              const hasBannerPerm =
+                isSupremeHassan(admin) ||
+                admin.role === 'admin' ||
+                getRoleLevel(admin.role) >= getRoleLevel('admin') ||
+                hasPermission(admin.role, 'canEditRoomBanner') ||
+                hasPermission(admin.role, 'canChangeRoomSettings');
+              if (!hasBannerPerm) {
+                socket.emit('systemAlert', 'ليس لديك صلاحية تغيير بنر الغرفة 🔒');
+              } else {
+                const cleanBanner = String(bannerUrl || '').trim();
+                if (!cleanBanner) {
+                  delete room.bannerUrl;
+                } else {
+                  const safeBanner = await ensureMediaUrlNotBase64(cleanBanner);
+                  room.bannerUrl = safeBanner || cleanBanner;
+                }
               }
             }
             broadcastRoomsUpdate();
@@ -8789,11 +9030,13 @@ io.on('connection', (socket) => {
         displayName: user.displayName || user.username,
         statusQuote: user.statusQuote,
         avatarUrl: user.avatarUrl,
+        avatarFrame: user.avatarFrame,
         nameBannerUrl: user.nameBannerUrl,
         nameColor: user.nameColor,
         textColor: user.textColor,
         nameGradient: user.nameGradient,
         profileBg: user.profileBg,
+        memberBg: user.memberBg,
         isPmDisabled: user.isPmDisabled
       });
       broadcastAllRegisteredMembers();
@@ -9936,13 +10179,40 @@ io.on('connection', (socket) => {
     }
   );
 
-  // Add Room
-  socket.on('createRoom', ({ name, desc, password }: { name: string; desc?: string; password?: string }) => {
+  // Add Room (with optional Banner)
+  socket.on('createRoom', async ({ name, desc, password, bannerUrl, voiceLimit }: { name: string; desc?: string; password?: string; bannerUrl?: string; voiceLimit?: number }) => {
     const admin = users.find((u) => u.id === socket.id);
-    if (!admin || (!isSupremeHassan(admin) && admin.role !== 'admin' && admin.role !== 'super')) return;
+    const canCreateRoom = Boolean(
+      admin && (
+        isSupremeHassan(admin) ||
+        admin.role === 'admin' ||
+        admin.role === 'super' ||
+        hasPermission(admin.role, 'canChangeRoomSettings') ||
+        getRoleLevel(admin.role) >= 75
+      )
+    );
+    if (!canCreateRoom) {
+      socket.emit('systemAlert', 'ليس لديك صلاحية إنشاء غرفة جديدة 🔒');
+      return;
+    }
 
     const cleanName = sanitizeText(name);
     if (!cleanName) return;
+
+    let safeBannerUrl: string | undefined;
+    if (bannerUrl && String(bannerUrl).trim()) {
+      const hasBannerPerm =
+        isSupremeHassan(admin) ||
+        admin!.role === 'admin' ||
+        getRoleLevel(admin!.role) >= getRoleLevel('admin') ||
+        hasPermission(admin!.role, 'canEditRoomBanner') ||
+        hasPermission(admin!.role, 'canChangeRoomSettings');
+      if (!hasBannerPerm) {
+        socket.emit('systemAlert', 'ليس لديك صلاحية تعيين بنر للغرفة 🔒');
+      } else {
+        safeBannerUrl = await ensureMediaUrlNotBase64(String(bannerUrl).trim());
+      }
+    }
 
     const newRoom: ChatRoom = {
       id: cleanName,
@@ -9950,7 +10220,8 @@ io.on('connection', (socket) => {
       desc: sanitizeText(desc) || 'غرفة جديدة في حسان برو',
       isPasswordProtected: !!password,
       password: password || undefined,
-      voiceLimit: 30,
+      bannerUrl: safeBannerUrl || undefined,
+      voiceLimit: Number(voiceLimit) || 30,
       activeVoiceCount: 0
     };
 

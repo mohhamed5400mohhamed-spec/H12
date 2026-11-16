@@ -377,3 +377,34 @@ body.app-booting {
   border-radius: 9999px;
 }
 
+/* Luxury Animated Avatar Frames (إطارات الصور الشخصية المتحركة والمتلألئة) */
+@keyframes frameSpinConic {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes frameShimmerPulse {
+  0%, 100% { opacity: 0.75; filter: brightness(1) drop-shadow(0 0 4px rgba(251, 191, 36, 0.55)); }
+  50% { opacity: 1; filter: brightness(1.3) drop-shadow(0 0 10px rgba(251, 191, 36, 0.95)); }
+}
+
+@keyframes frameSparkleTwinkle {
+  0%, 100% { transform: scale(0.65) rotate(0deg); opacity: 0.35; }
+  50% { transform: scale(1.25) rotate(25deg); opacity: 1; }
+}
+
+.avatar-frame-spin {
+  animation: frameSpinConic 4.2s linear infinite;
+}
+
+.avatar-frame-spin-fast {
+  animation: frameSpinConic 2.6s linear infinite;
+}
+
+.avatar-frame-glitter {
+  animation: frameShimmerPulse 2.2s ease-in-out infinite;
+}
+
+.avatar-frame-sparkle {
+  animation: frameSparkleTwinkle 1.8s ease-in-out infinite;
+}

@@ -180,7 +180,20 @@ export async function askBotAI({
 
   const memKey = `${bot.id}::${String(senderKey || senderName || '').trim().toLowerCase()}`;
   const existingMem = conversationMemory.get(memKey);
-  const previousTurns = existingMem && Array.isArray(existingMem.turns) ? existingMem.turns : [];
+  const rawTurns = existingMem && Array.isArray(existingMem.turns) ? existingMem.turns : [];
+  // Ensure strict user -> model alternation starting with 'user' (required by Gemini API)
+  const previousTurns = [];
+  for (const t of rawTurns) {
+    if (!t || (t.role !== 'user' && t.role !== 'model') || !Array.isArray(t.parts) || !t.parts[0]?.text) continue;
+    if (previousTurns.length === 0 && t.role !== 'user') continue;
+    const expectedRole = previousTurns.length % 2 === 0 ? 'user' : 'model';
+    if (t.role === expectedRole) {
+      previousTurns.push(t);
+    }
+  }
+  if (previousTurns.length % 2 !== 0) {
+    previousTurns.pop();
+  }
 
   const systemInstruction = [
     isPrivate

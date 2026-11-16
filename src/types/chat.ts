@@ -20,6 +20,7 @@ export interface RolePermissions {
   canLockRoom?: boolean;
   canSetSlowMode?: boolean;
   canChangeRoomSettings?: boolean;
+  canEditRoomBanner?: boolean;
 
   // 2. Microphone & Audio (المايكروفون والصوتيات)
   canTakeMic?: boolean;
@@ -47,6 +48,8 @@ export interface RolePermissions {
   canEditPoints?: boolean;
   canAssignBanner?: boolean;
   canAssignBadge?: boolean;
+  canUseAvatarFrame?: boolean;
+  canUseMemberBg?: boolean;
   canChangeMemberPassword?: boolean;
   canMoveUsers?: boolean;
   canChangeRoles?: boolean;
@@ -97,6 +100,7 @@ export interface User {
   room: string;
   avatarSeed: string;
   avatarUrl?: string;
+  avatarFrame?: string; // إطار الصورة الشخصية (مسبق الصنع أو مرفوع من الجهاز)
   statusQuote: string;
   flag: string;
   flagNumber?: number;
@@ -121,6 +125,7 @@ export interface User {
   textColor?: string;
   nameGradient?: string;
   profileBg?: string;
+  memberBg?: string; // خلفية بطاقة العضو في قائمة الأعضاء والبروفايل
   theme?: string;
   fontFamily?: string;
   wallpaper?: string;
@@ -330,6 +335,7 @@ export interface ChatRoom {
   desc: string;
   isPasswordProtected: boolean;
   password?: string;
+  bannerUrl?: string;
   voiceLimit: number;
   activeVoiceCount: number;
 }

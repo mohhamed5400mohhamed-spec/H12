@@ -133,6 +133,7 @@ export interface ChatRoom {
   desc: string;
   isPasswordProtected: boolean;
   password?: string;
+  bannerUrl?: string;
   voiceLimit: number;
   activeVoiceCount: number;
 }
@@ -702,6 +703,7 @@ export const AdminControlSuite: React.FC<AdminControlSuiteProps> = ({
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomDesc, setNewRoomDesc] = useState('');
   const [newRoomPass, setNewRoomPass] = useState('');
+  const [newRoomBannerUrl, setNewRoomBannerUrl] = useState('');
   const [newRoomVoiceCap, setNewRoomVoiceCap] = useState(30);
 
   // Edit Room Modal
@@ -709,7 +711,9 @@ export const AdminControlSuite: React.FC<AdminControlSuiteProps> = ({
   const [editRoomName, setEditRoomName] = useState('');
   const [editRoomDesc, setEditRoomDesc] = useState('');
   const [editRoomPass, setEditRoomPass] = useState('');
+  const [editRoomBannerUrl, setEditRoomBannerUrl] = useState('');
   const [editRoomVoiceCap, setEditRoomVoiceCap] = useState(30);
+  const [isUploadingRoomBanner, setIsUploadingRoomBanner] = useState(false);
 
   // Quick Action User Dialog (Modal)
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -2381,6 +2385,57 @@ export const AdminControlSuite: React.FC<AdminControlSuiteProps> = ({
                   onChange={(e) => setNewRoomDesc(e.target.value)}
                   className="w-full p-2 rounded-lg text-xs bg-slate-800 border border-slate-700 text-white outline-none"
                 />
+
+                {/* Room Banner Picker */}
+                <div className="p-2 rounded-lg bg-slate-800/80 border border-slate-700 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold text-amber-300">بنر وخلفية الغرفة (اختياري):</span>
+                    <div className="flex items-center gap-1.5">
+                      <label className="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold cursor-pointer">
+                        {isUploadingRoomBanner ? 'جارٍ الرفع...' : 'رفع بنر من الجهاز 🖼️'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = '';
+                            if (!file) return;
+                            setIsUploadingRoomBanner(true);
+                            try {
+                              const res = await uploadMediaWithProgress(file);
+                              if (res?.url) {
+                                setNewRoomBannerUrl(res.url);
+                                showToast('تم رفع بنر الغرفة بنجاح ✓', 'success');
+                              }
+                            } catch (err: any) {
+                              showToast(err?.message || 'فشل رفع بنر الغرفة', 'error');
+                            } finally {
+                              setIsUploadingRoomBanner(false);
+                            }
+                          }}
+                        />
+                      </label>
+                      {newRoomBannerUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setNewRoomBannerUrl('')}
+                          className="px-2 py-1 rounded bg-rose-700 hover:bg-rose-600 text-white text-[10px] font-bold cursor-pointer"
+                        >
+                          إزالة
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {newRoomBannerUrl && (
+                    <img
+                      src={newRoomBannerUrl}
+                      alt="معاينة بنر الغرفة"
+                      className="w-full h-auto max-h-28 object-cover rounded-lg border border-amber-500/40"
+                    />
+                  )}
+                </div>
+
                 <div className="flex items-center justify-between pt-1">
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] text-slate-400">سعة الصوت:</span>
@@ -2395,7 +2450,10 @@ export const AdminControlSuite: React.FC<AdminControlSuiteProps> = ({
                   </div>
                   <div className="flex items-center gap-1.5">
                     <button
-                      onClick={() => setIsCreatingRoom(false)}
+                      onClick={() => {
+                        setIsCreatingRoom(false);
+                        setNewRoomBannerUrl('');
+                      }}
                       className="px-2.5 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs cursor-pointer"
                     >
                       إلغاء
@@ -2410,11 +2468,13 @@ export const AdminControlSuite: React.FC<AdminControlSuiteProps> = ({
                           name: newRoomName.trim(),
                           desc: newRoomDesc.trim(),
                           password: newRoomPass.trim() || undefined,
+                          bannerUrl: newRoomBannerUrl || undefined,
                           voiceLimit: newRoomVoiceCap
                         });
                         setNewRoomName('');
                         setNewRoomDesc('');
                         setNewRoomPass('');
+                        setNewRoomBannerUrl('');
                         setIsCreatingRoom(false);
                       }}
                       className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer"
@@ -2426,62 +2486,224 @@ export const AdminControlSuite: React.FC<AdminControlSuiteProps> = ({
               </div>
             )}
 
+            {/* Inline Edit Room Form */}
+            {editingRoom && (
+              <div className="p-3 bg-slate-900 rounded-xl border border-amber-500/50 space-y-2">
+                <div className="flex items-center justify-between">
+                  <h6 className="font-bold text-amber-300 text-xs">تعديل الغرفة وبنرها: [{editingRoom.name}]</h6>
+                  <button
+                    type="button"
+                    onClick={() => setEditingRoom(null)}
+                    className="text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    placeholder="اسم الغرفة"
+                    value={editRoomName}
+                    onChange={(e) => setEditRoomName(e.target.value)}
+                    className="p-2 rounded-lg text-xs bg-slate-800 border border-slate-700 text-white outline-none"
+                  />
+                  <input
+                    type="text"
+                    placeholder="كلمة مرور جديدة (اتركه فارغاً للإزالة)"
+                    value={editRoomPass}
+                    onChange={(e) => setEditRoomPass(e.target.value)}
+                    className="p-2 rounded-lg text-xs bg-slate-800 border border-slate-700 text-white outline-none"
+                  />
+                </div>
+                <input
+                  type="text"
+                  placeholder="وصف الغرفة..."
+                  value={editRoomDesc}
+                  onChange={(e) => setEditRoomDesc(e.target.value)}
+                  className="w-full p-2 rounded-lg text-xs bg-slate-800 border border-slate-700 text-white outline-none"
+                />
+
+                {/* Edit Room Banner Picker */}
+                <div className="p-2 rounded-lg bg-slate-800/80 border border-slate-700 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold text-amber-300">بنر للغرفة:</span>
+                    <div className="flex items-center gap-1.5">
+                      <label className="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold cursor-pointer">
+                        {isUploadingRoomBanner ? 'جارٍ الرفع...' : 'رفع بنر من الجهاز 🖼️'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = '';
+                            if (!file) return;
+                            setIsUploadingRoomBanner(true);
+                            try {
+                              const res = await uploadMediaWithProgress(file);
+                              if (res?.url) {
+                                setEditRoomBannerUrl(res.url);
+                                showToast('تم رفع بنر الغرفة بنجاح ✓', 'success');
+                              }
+                            } catch (err: any) {
+                              showToast(err?.message || 'فشل رفع بنر الغرفة', 'error');
+                            } finally {
+                              setIsUploadingRoomBanner(false);
+                            }
+                          }}
+                        />
+                      </label>
+                      {editRoomBannerUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setEditRoomBannerUrl('')}
+                          className="px-2 py-1 rounded bg-rose-700 hover:bg-rose-600 text-white text-[10px] font-bold cursor-pointer"
+                        >
+                          إزالة البنر
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {editRoomBannerUrl && (
+                    <img
+                      src={editRoomBannerUrl}
+                      alt="معاينة بنر الغرفة"
+                      className="w-full h-auto max-h-32 object-cover rounded-lg border border-amber-500/40"
+                    />
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-400">سعة الصوت:</span>
+                    <input
+                      type="number"
+                      min={5}
+                      max={100}
+                      value={editRoomVoiceCap}
+                      onChange={(e) => setEditRoomVoiceCap(Number(e.target.value))}
+                      className="w-16 p-1 rounded bg-slate-800 text-white text-xs border border-slate-700"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditingRoom(null)}
+                      className="px-2.5 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs cursor-pointer"
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onAdminAction('editRoom', undefined, {
+                          roomId: editingRoom.id,
+                          name: editRoomName.trim() || editingRoom.name,
+                          desc: editRoomDesc.trim(),
+                          password: editRoomPass.trim(),
+                          voiceLimit: editRoomVoiceCap,
+                          bannerUrl: editRoomBannerUrl
+                        });
+                        setEditingRoom(null);
+                      }}
+                      className="px-3 py-1 rounded bg-amber-600 hover:bg-amber-500 text-black text-xs font-black cursor-pointer"
+                    >
+                      حفظ التعديل 💾
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Rooms List Cards */}
-            <div className="space-y-1.5 max-h-56 overflow-y-auto">
+            <div className="space-y-1.5 max-h-64 overflow-y-auto">
               {roomsList.map((room) => {
                 const occupants = rosterUsers.filter((u) => u.room === room.id).length;
                 const isCurrent = currentUser.room === room.id;
                 const isProtectedCore = room.id === 'الغرفة العامة' || room.id === 'سجن حسان برو';
+                const canEditThisRoom = isSupremeHassan || currentUser.role === 'admin' || currentUser.role === 'super' || getRoleLevel(currentUser.role) >= 75;
 
                 return (
                   <div
                     key={room.id}
-                    className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 flex items-center justify-between gap-2"
+                    className="grid grid-cols-1 rounded-xl bg-slate-900 border border-slate-700 overflow-hidden"
                   >
-                    <div className="min-w-0">
-                      <div className="font-bold text-white text-xs flex items-center gap-1.5">
-                        <span>{room.name}</span>
-                        {room.isPasswordProtected && <Lock className="w-3 h-3 text-amber-400" />}
-                        {isCurrent && (
-                          <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-1.5 py-0.2 rounded font-bold">
-                            غرفتك الحالية
-                          </span>
+                    {room.bannerUrl && (
+                      <img
+                        src={room.bannerUrl}
+                        alt={room.name}
+                        className="col-start-1 row-start-1 w-full h-auto max-h-36 min-h-full object-cover select-none pointer-events-none"
+                      />
+                    )}
+                    {room.bannerUrl && (
+                      <div
+                        aria-hidden="true"
+                        className="col-start-1 row-start-1 bg-gradient-to-b from-slate-950/90 via-slate-950/35 to-transparent pointer-events-none"
+                      />
+                    )}
+                    <div className="col-start-1 row-start-1 relative z-10 self-start w-full px-2.5 pt-2.5 pb-3 flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-bold text-white text-xs flex items-center gap-1.5 drop-shadow">
+                          <span>{room.name}</span>
+                          {room.isPasswordProtected && <Lock className="w-3 h-3 text-amber-400" />}
+                          {isCurrent && (
+                            <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-1.5 py-0.2 rounded font-bold">
+                              غرفتك الحالية
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-300 truncate max-w-[220px] drop-shadow">
+                          {room.desc}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <span className="text-[10px] text-slate-200 bg-slate-900/80 border border-slate-700 px-2 py-0.5 rounded font-mono">
+                          {occupants} عضو
+                        </span>
+                        {!isCurrent && (
+                          <button
+                            onClick={() => onSwitchRoom(room.id)}
+                            className="px-2 py-1 rounded bg-slate-800/90 hover:bg-slate-700 text-amber-300 text-[10px] font-bold cursor-pointer"
+                          >
+                            دخول
+                          </button>
+                        )}
+                        {canEditThisRoom && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingRoom(room);
+                              setEditRoomName(room.name);
+                              setEditRoomDesc(room.desc || '');
+                              setEditRoomPass('');
+                              setEditRoomVoiceCap(room.voiceLimit || 30);
+                              setEditRoomBannerUrl(room.bannerUrl || '');
+                            }}
+                            className="p-1 rounded bg-slate-800/90 hover:bg-amber-600 hover:text-black text-amber-300 cursor-pointer"
+                            title="تعديل الغرفة والبنر"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {(isSupremeHassan || currentUser.role === 'admin' || getRoleLevel(currentUser.role) >= 100) && !isProtectedCore && (
+                          <button
+                            onClick={() => {
+                              openConfirmDialog(
+                                'حذف الغرفة',
+                                `هل أنت متأكد من حذف الغرفة [${room.name}]؟ سيتم نقل روادها إلى الغرفة العامة.`,
+                                () => {
+                                  onAdminAction('deleteRoom', undefined, room.id);
+                                }
+                              );
+                            }}
+                            className="p-1 rounded bg-slate-800/90 hover:bg-red-900/60 text-red-400 cursor-pointer"
+                            title="حذف الغرفة"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         )}
                       </div>
-                      <div className="text-[10px] text-slate-400 truncate max-w-[220px]">
-                        {room.desc}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <span className="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded font-mono">
-                        {occupants} عضو
-                      </span>
-                      {!isCurrent && (
-                        <button
-                          onClick={() => onSwitchRoom(room.id)}
-                          className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[10px] font-bold cursor-pointer"
-                        >
-                          دخول
-                        </button>
-                      )}
-                      {(isSupremeHassan || currentUser.role === 'admin' || getRoleLevel(currentUser.role) >= 100) && !isProtectedCore && (
-                        <button
-                          onClick={() => {
-                            openConfirmDialog(
-                              'حذف الغرفة',
-                              `هل أنت متأكد من حذف الغرفة [${room.name}]؟ سيتم نقل روادها إلى الغرفة العامة.`,
-                              () => {
-                                onAdminAction('deleteRoom', undefined, room.id);
-                              }
-                            );
-                          }}
-                          className="p-1 rounded bg-slate-800 hover:bg-red-900/60 text-red-400 cursor-pointer"
-                          title="حذف الغرفة"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
                     </div>
                   </div>
                 );
@@ -4525,7 +4747,7 @@ export const AdminControlSuite: React.FC<AdminControlSuiteProps> = ({
                 {
                   id: 'chat_rooms',
                   title: '💬 الدردشة العامة والغرف',
-                  badge: '9 صلاحيات',
+                  badge: '10 صلاحيات',
                   items: [
                     { key: 'canSendText', label: 'إرسال الرسائل النصية', desc: 'إمكانية إرسال الرسائل والكتابة في الشات العام' },
                     { key: 'canSendMedia', label: 'إرسال الصور والوسائط', desc: 'إمكانية إرسال الصور والفيديوهات والملصقات بالعام' },
@@ -4535,7 +4757,8 @@ export const AdminControlSuite: React.FC<AdminControlSuiteProps> = ({
                     { key: 'canClearRoomChat', label: 'مسح شات الغرفة كاملاً', desc: 'تفريغ ومسح سجل محادثات الغرفة فوراً للجميع' },
                     { key: 'canLockRoom', label: 'قفل وفتح الشات العام', desc: 'إغلاق أو فتح إرسال الرسائل في الغرفة بقرار إداري' },
                     { key: 'canSetSlowMode', label: 'وضع التباطؤ (Slow Mode)', desc: 'تحديد مهلة زمنية بالثواني بين كل رسالة وأخرى' },
-                    { key: 'canChangeRoomSettings', label: 'تعديل إعدادات الغرفة', desc: 'تغيير اسم ووصف وخلفية ورسالة ترحيب الغرفة الحالية' }
+                    { key: 'canChangeRoomSettings', label: 'تعديل إعدادات الغرفة', desc: 'تغيير اسم ووصف وخلفية ورسالة ترحيب الغرفة الحالية' },
+                    { key: 'canEditRoomBanner', label: 'تغيير بنر وخلفية الغرفة', desc: 'رفع وتعيين صورة بنر للغرفة لتظهر في قائمة الغرف' }
                   ]
                 },
                 {
@@ -4568,7 +4791,7 @@ export const AdminControlSuite: React.FC<AdminControlSuiteProps> = ({
                 {
                   id: 'members',
                   title: '👤 إدارة الأعضاء والملفات',
-                  badge: '11 صلاحيات',
+                  badge: '13 صلاحية',
                   items: [
                     { key: 'canEditMemberProfile', label: 'تعديل اسم وحالة العضو', desc: 'تعديل زخرفة الاسم والرسالة الشخصية للعضو' },
                     { key: 'canDeleteAvatar', label: 'حذف الصورة الشخصية المخالفة', desc: 'إزالة الصورة الرمزية للعضو فوراً لمخالفتها الآداب' },
@@ -4576,6 +4799,8 @@ export const AdminControlSuite: React.FC<AdminControlSuiteProps> = ({
                     { key: 'canEditPoints', label: 'تعديل رصيد النقاط', desc: 'تعديل نقاط العضو التفاعلية في حسابه' },
                     { key: 'canAssignBanner', label: 'تثبيت البنر المصور (500x50)', desc: 'تعيين وحفظ لقب البنر المصور للعضو بجانب اسمه' },
                     { key: 'canAssignBadge', label: 'منح الهدايا والأوسمة الشرفية', desc: 'إضافة وسام شرفي أو هدية تظهر بجانب اسم العضو' },
+                    { key: 'canUseAvatarFrame', label: 'استخدام إطار الصورة الشخصية', desc: 'اختيار إطار متحرك أو رفع إطار خاص من الهاتف على الصورة' },
+                    { key: 'canUseMemberBg', label: 'تغيير خلفية العضوية والبروفايل', desc: 'اختيار أو رفع خلفية للبروفايل وتظهر ببطاقة العضو في القائمة' },
                     { key: 'canChangeMemberPassword', label: 'تغيير كلمة المرور عند النسيان', desc: 'تعيين باسورد جديد للعضو عند نسيان كلمة المرور' },
                     { key: 'canMoveUsers', label: 'نقل الأعضاء بين الغرف', desc: 'نقل وسحب الأعضاء قسراً من غرفة إلى غرفة أخرى' },
                     { key: 'canChangeRoles', label: 'ترقية وتعيين رتب الأعضاء', desc: 'تغيير رتبة ومجموعة العضو وترقيته في النظام' },

@@ -135,8 +135,13 @@ export function createBotEngine(ctx) {
   const activeConversations = new Map(); // `${roomId}::${lowerSender}` -> { botId, updatedAt }
   const ambientSilenceUntil = new Map(); // `${roomId}::${lowerSender}` -> timestamp
   const roomLastAmbientBotIdx = new Map(); // roomId -> last bot index for natural rotation
+  const roomQueues = new Map(); // `${roomId}::${lowerSender}` -> { messages, timer, processing, sender }
   const pmQueues = new Map(); // `${botId}::${lowerSender}` -> { messages, timer, processing, sender, botRecord }
+  const activeRoomTypingTimers = new Map(); // `${botKey}::${roomId}` -> { interval, botMeta, roomId }
+  const activePmTypingTimers = new Map(); // `${botKey}::${lowerSender}` -> { interval, botRecord, sender }
   const ACTIVE_CONVERSATION_TTL_MS = 10 * 60 * 1000; // 10 minutes follow-up window persisted in MongoDB
+  const TYPING_HEARTBEAT_MS = 2400; // Re-emit before client 4s auto-prune expires
+  const MIN_TYPING_PREVIEW_MS = 850; // Guarantee visible "يكتب الآن..." even when delayedReplyEnabled is false
 
   let stateChangeListeners = new Set();
 
@@ -190,6 +195,18 @@ export function createBotEngine(ctx) {
     for (const id of Array.from(perBotRejoinTimers.keys())) {
       clearBotRejoinTimer(id);
     }
+    for (const entry of activeRoomTypingTimers.values()) {
+      clearInterval(entry.interval);
+    }
+    activeRoomTypingTimers.clear();
+    for (const entry of activePmTypingTimers.values()) {
+      clearInterval(entry.interval);
+    }
+    activePmTypingTimers.clear();
+    for (const rq of roomQueues.values()) {
+      if (rq.timer) clearTimeout(rq.timer);
+    }
+    roomQueues.clear();
   }
 
   function saveBots() {
@@ -315,6 +332,9 @@ export function createBotEngine(ctx) {
     registeredMembers[targetKey] = {
       ...(prev || {}),
       password: prev?.password || hashPassword(`bot-secret-${bot.id}`),
+      originalUsername: prev?.originalUsername || targetKey,
+      registeredAt: prev?.registeredAt || bot.createdAt || Date.now(),
+      displayName: bot.username,
       role: 'member', // Strict requirement: bot is NEVER guest or system
       flag: botFlag,
       flagNumber: assignedFlagNumber || prev?.flagNumber,
@@ -442,8 +462,126 @@ export function createBotEngine(ctx) {
     broadcastPresenceForRooms(affectedRooms);
   }
 
+  function getBotTypingPayload(botUserOrRecord, roomId, isTyping) {
+    const rec = bots.find(
+      (b) => b.id === botUserOrRecord?.id || getBotLiveId(b.id) === botUserOrRecord?.id || b.username.toLowerCase() === String(botUserOrRecord?.username || '').toLowerCase()
+    );
+    const liveId = rec ? getBotLiveId(rec.id) : (botUserOrRecord?.id || `bot-${botUserOrRecord?.username || 'bot'}`);
+    const username = rec?.username || botUserOrRecord?.username || 'بوت';
+    const avatarUrl = rec?.avatarUrl || botUserOrRecord?.avatarUrl || DEFAULT_FALLBACK_BOT_AVATAR;
+    const flag = rec?.flag || botUserOrRecord?.flag || '🇸🇦';
+    return {
+      userId: liveId,
+      username,
+      displayName: username,
+      avatarUrl,
+      flag,
+      role: 'member',
+      room: roomId,
+      isTyping: Boolean(isTyping),
+      timestamp: Date.now()
+    };
+  }
+
+  function startRoomBotTyping(botUserOrRecord, roomId) {
+    if (!botUserOrRecord || !roomId) return;
+    const payload = getBotTypingPayload(botUserOrRecord, roomId, true);
+    const tKey = `${payload.userId}::${roomId}`;
+    const existing = activeRoomTypingTimers.get(tKey);
+    if (existing) {
+      clearInterval(existing.interval);
+    }
+    io.to(roomId).emit('userTyping', payload);
+    const interval = setInterval(() => {
+      const stillActive = activeRoomTypingTimers.get(tKey);
+      if (!stillActive) return;
+      io.to(roomId).emit('userTyping', { ...payload, timestamp: Date.now() });
+    }, TYPING_HEARTBEAT_MS);
+    activeRoomTypingTimers.set(tKey, { interval, botMeta: payload, roomId });
+  }
+
+  function stopRoomBotTyping(botUserOrRecord, roomId) {
+    if (!botUserOrRecord || !roomId) return;
+    const payload = getBotTypingPayload(botUserOrRecord, roomId, false);
+    const tKey = `${payload.userId}::${roomId}`;
+    const existing = activeRoomTypingTimers.get(tKey);
+    if (existing) {
+      clearInterval(existing.interval);
+      activeRoomTypingTimers.delete(tKey);
+    }
+    io.to(roomId).emit('userTyping', payload);
+  }
+
+  function emitPmTypingFrame(botRecord, sender, isTyping) {
+    if (!botRecord || !sender) return;
+    const lowerSender = String(sender.username || '').trim().toLowerCase();
+    const liveSender = users.find((u) => !u.isBot && u.username.toLowerCase() === lowerSender);
+    const sid = liveSender?.id || sender.id;
+    if (!sid || !io.sockets.sockets.get(sid)?.connected) return;
+    const botLiveId = getBotLiveId(botRecord.id);
+    const botAvatar = botRecord.avatarUrl || DEFAULT_FALLBACK_BOT_AVATAR;
+    io.to(sid).emit('userPmTyping', {
+      fromUserId: botLiveId,
+      fromUsername: botRecord.username,
+      fromDisplayName: botRecord.username,
+      avatarUrl: botAvatar,
+      nameBannerUrl: '',
+      isTyping: Boolean(isTyping),
+      timestamp: Date.now()
+    });
+  }
+
+  function startPmBotTyping(botRecord, sender) {
+    if (!botRecord || !sender) return;
+    const lowerSender = String(sender.username || '').trim().toLowerCase();
+    const tKey = `${botRecord.id}::${lowerSender}`;
+    const existing = activePmTypingTimers.get(tKey);
+    if (existing) {
+      clearInterval(existing.interval);
+    }
+    emitPmTypingFrame(botRecord, sender, true);
+    const interval = setInterval(() => {
+      const entry = activePmTypingTimers.get(tKey);
+      if (!entry) return;
+      emitPmTypingFrame(entry.botRecord, entry.sender, true);
+    }, TYPING_HEARTBEAT_MS);
+    activePmTypingTimers.set(tKey, { interval, botRecord, sender });
+  }
+
+  function stopPmBotTyping(botRecord, sender) {
+    if (!botRecord || !sender) return;
+    const lowerSender = String(sender.username || '').trim().toLowerCase();
+    const tKey = `${botRecord.id}::${lowerSender}`;
+    const existing = activePmTypingTimers.get(tKey);
+    if (existing) {
+      clearInterval(existing.interval);
+      activePmTypingTimers.delete(tKey);
+    }
+    emitPmTypingFrame(botRecord, sender, false);
+  }
+
+  function stopAllTypingForBot(botOrId) {
+    const botId = typeof botOrId === 'string' ? botOrId : botOrId?.id;
+    const liveId = botId ? getBotLiveId(botId) : '';
+    for (const [key, entry] of Array.from(activeRoomTypingTimers.entries())) {
+      if ((liveId && key.startsWith(`${liveId}::`)) || (botId && key.startsWith(`${botId}::`))) {
+        clearInterval(entry.interval);
+        activeRoomTypingTimers.delete(key);
+        io.to(entry.roomId).emit('userTyping', { ...entry.botMeta, isTyping: false, timestamp: Date.now() });
+      }
+    }
+    for (const [key, entry] of Array.from(activePmTypingTimers.entries())) {
+      if (botId && key.startsWith(`${botId}::`)) {
+        clearInterval(entry.interval);
+        activePmTypingTimers.delete(key);
+        emitPmTypingFrame(entry.botRecord, entry.sender, false);
+      }
+    }
+  }
+
   function sendBotMessage(botUserOrRecord, roomId, text) {
     if (!text || !roomId) return;
+    stopRoomBotTyping(botUserOrRecord, roomId);
     const username = botUserOrRecord.username;
     const avatarUrl = botUserOrRecord.avatarUrl || DEFAULT_FALLBACK_BOT_AVATAR;
     const flag = botUserOrRecord.flag || '🇸🇦';
@@ -477,6 +615,7 @@ export function createBotEngine(ctx) {
 
   function sendBotPrivateMessage(botRecord, recipientUser, text, replyToPm = null) {
     if (!botRecord || !recipientUser || !text) return;
+    stopPmBotTyping(botRecord, recipientUser);
     const now = Date.now();
     const botUsername = botRecord.username;
     const botLiveId = getBotLiveId(botRecord.id);
@@ -489,18 +628,6 @@ export function createBotEngine(ctx) {
     const recipientSocketId = liveRecipient?.id || recipientUser.id;
     const recipientSock = recipientSocketId ? io.sockets.sockets.get(recipientSocketId) : undefined;
     const isRecipientOnline = Boolean(recipientSock && recipientSock.connected);
-
-    if (isRecipientOnline) {
-      io.to(recipientSocketId).emit('userPmTyping', {
-        fromUserId: botLiveId,
-        fromUsername: botUsername,
-        fromDisplayName: botUsername,
-        avatarUrl: botAvatar,
-        nameBannerUrl: '',
-        isTyping: false,
-        timestamp: now
-      });
-    }
 
     const pm = {
       id: `pm-bot-${now}-${Math.random().toString(36).substring(2, 7)}`,
@@ -647,10 +774,11 @@ export function createBotEngine(ctx) {
     const now = Date.now();
     const lowerMember = joinedUser.username.trim().toLowerCase();
 
-    // Find an active bot in the room that hasn't welcomed this user within the last 5 minutes
+    // Find a visible active bot in the room that hasn't welcomed this user within the last 5 minutes
     const eligibleBot = activeBots.find((b) => {
+      if (b.isGhost) return false;
       const botRecord = bots.find((rec) => getBotLiveId(rec.id) === b.id);
-      if (!botRecord || !botRecord.enabled) return false;
+      if (!botRecord || !botRecord.enabled || botRecord.status === 'hidden') return false;
       const key = `${botRecord.id}::${lowerMember}`;
       const lastWelcome = welcomeCooldowns.get(key) || 0;
       return now - lastWelcome >= 5 * 60 * 1000;
@@ -662,14 +790,21 @@ export function createBotEngine(ctx) {
     if (!botRecord) return;
 
     welcomeCooldowns.set(`${botRecord.id}::${lowerMember}`, now);
+    startRoomBotTyping(eligibleBot, roomId);
 
     setTimeout(() => {
-      if (!botSettings.globalEnabled || !botSettings.welcomeEnabled) return;
+      if (!botSettings.globalEnabled || !botSettings.welcomeEnabled) {
+        stopRoomBotTyping(eligibleBot, roomId);
+        return;
+      }
       const stillBot = users.find((u) => u.id === eligibleBot.id && u.room === roomId);
       const stillMember = users.find(
         (u) => !u.isBot && u.username.trim().toLowerCase() === lowerMember && u.room === roomId
       );
-      if (!stillBot || !stillMember) return;
+      if (!stillBot || !stillMember) {
+        stopRoomBotTyping(eligibleBot, roomId);
+        return;
+      }
 
       const roomObj = chatRooms.find((r) => r.id === roomId);
       const roomName = roomObj?.name || roomId;
@@ -700,15 +835,39 @@ export function createBotEngine(ctx) {
   function textMatchesKeyword(candidates, keyword) {
     const cleanKw = String(keyword || '').trim();
     if (!cleanKw) return false;
-    const lowerKw = cleanKw.toLowerCase();
     const normKw = normalizeArabicForMatch(cleanKw);
     const compactKw = normalizeArabicCompact(cleanKw);
+    if (!normKw) return false;
+
+    const kwWords = normKw.split(/\s+/).filter(Boolean);
+    const kwWordCount = kwWords.length;
 
     for (const candidate of candidates) {
-      if (!candidate) continue;
-      if (candidate.lower.includes(lowerKw)) return true;
-      if (normKw && candidate.norm.includes(normKw)) return true;
-      if (compactKw && compactKw.length >= 3 && candidate.compact.includes(compactKw)) return true;
+      if (!candidate?.norm) continue;
+      const msgWords = candidate.norm.split(/\s+/).filter(Boolean);
+      if (msgWords.length < kwWordCount) continue;
+
+      for (let i = 0; i <= msgWords.length - kwWordCount; i++) {
+        const slice = msgWords.slice(i, i + kwWordCount);
+        const sliceJoined = slice.join(' ');
+        if (sliceJoined === normKw) return true;
+
+        // Allow optional conjunction prefix ("و" / "ف") on single/first word when keyword is at least 2 chars
+        if (slice[0].length > kwWords[0].length + 0 && (slice[0].startsWith('و') || slice[0].startsWith('ف')) && kwWords[0].length >= 2) {
+          const strippedFirst = slice[0].slice(1);
+          const altSlice = [strippedFirst, ...slice.slice(1)].join(' ');
+          if (altSlice === normKw) return true;
+        }
+
+        // Stretched-letters match per contiguous phrase window (e.g. "هلااااا" -> "هلا"), never across unrelated substrings
+        if (compactKw.length >= 2) {
+          const sliceCompact = sliceJoined.replace(/(.)\1+/g, '$1').replace(/\s+/g, '');
+          if (sliceCompact === compactKw) return true;
+          if (kwWordCount === 1 && (sliceCompact.startsWith('و') || sliceCompact.startsWith('ف')) && sliceCompact.slice(1) === compactKw) {
+            return true;
+          }
+        }
+      }
     }
     return false;
   }
@@ -959,32 +1118,36 @@ export function createBotEngine(ctx) {
 
   function selectAmbientBotInRoom(activeBots, roomId) {
     if (!activeBots || activeBots.length === 0) return null;
+    const visibleBots = activeBots.filter((b) => {
+      if (b.isGhost) return false;
+      const rec = bots.find((item) => getBotLiveId(item.id) === b.id);
+      return Boolean(rec && rec.enabled && rec.status !== 'offline' && rec.status !== 'hidden');
+    });
+    if (visibleBots.length === 0) return null;
     const prevIdx = roomLastAmbientBotIdx.get(roomId) ?? -1;
-    const nextIdx = (prevIdx + 1) % activeBots.length;
+    const nextIdx = (prevIdx + 1) % visibleBots.length;
     roomLastAmbientBotIdx.set(roomId, nextIdx);
-    const botUser = activeBots[nextIdx];
+    const botUser = visibleBots[nextIdx];
     const botRecord = bots.find((item) => getBotLiveId(item.id) === botUser.id);
-    if (!botRecord || !botRecord.enabled || botRecord.status === 'offline') return null;
+    if (!botRecord || !botRecord.enabled || botRecord.status === 'offline' || botRecord.status === 'hidden') return null;
     return { botUser, botRecord };
   }
 
-  function onRoomMessage(sender, msg, rawOriginalText = '') {
+  async function processRoomMessageBatch(sender, roomId, items) {
     if (!botSettings.globalEnabled || !botSettings.autoRepliesEnabled) return;
-    if (!sender || sender.isBot) return;
-    if (!msg) return;
+    if (!sender || sender.isBot || !items || items.length === 0) return;
 
-    const rawText = typeof msg.text === 'string' ? msg.text.trim() : '';
-    const originalText = typeof rawOriginalText === 'string' ? rawOriginalText.trim() : '';
-    const hasMediaAttachment = Boolean(msg.mediaUrl || msg.voiceNote);
-    if (!rawText && !originalText && !hasMediaAttachment) return;
-
-    const roomId = sender.room;
     const activeBots = getActiveBotUsersInRoom(roomId);
     if (activeBots.length === 0) return;
 
-    const effectiveText = rawText || originalText || (msg.voiceNote ? '[أرسل رسالة صوتية]' : '[أرسل صورة أو ملصق]');
+    const lastItem = items[items.length - 1];
+    const mergedRawText = items.map((i) => i.rawText).filter(Boolean).join('\n').trim();
+    const mergedOriginalText = items.map((i) => i.originalText).filter(Boolean).join('\n').trim();
+    const effectiveText = mergedRawText || mergedOriginalText || lastItem.effectiveText;
+    const msg = lastItem.msg;
+    if (!effectiveText) return;
 
-    const candidates = [effectiveText, originalText]
+    const candidates = [effectiveText, mergedOriginalText]
       .filter((t, idx, arr) => Boolean(t) && arr.indexOf(t) === idx)
       .map((t) => ({
         raw: t,
@@ -996,19 +1159,21 @@ export function createBotEngine(ctx) {
     const now = Date.now();
     const lowerSender = sender.username.trim().toLowerCase();
     const convKey = `${roomId}::${lowerSender}`;
-    const delayMs = botSettings.delayedReplyEnabled ? Math.max(0, Number(botSettings.replyDelaySeconds ?? 1)) * 1000 : 0;
+    const configuredDelayMs = botSettings.delayedReplyEnabled ? Math.max(0, Number(botSettings.replyDelaySeconds ?? 1)) * 1000 : 0;
+    const effectiveTypingDelayMs = configuredDelayMs > 0 ? Math.max(configuredDelayMs, MIN_TYPING_PREVIEW_MS) : MIN_TYPING_PREVIEW_MS;
     const senderDisplay = sender.displayName || sender.username;
 
     // 0. Check Reply-To target (if member explicitly clicked Reply on a message)
     let addressed = null;
     let replyContextText = '';
-    if (msg.replyTo && msg.replyTo.username) {
-      const replyTargetLower = String(msg.replyTo.username).trim().toLowerCase();
+    const replyItem = [...items].reverse().find((i) => i.msg?.replyTo?.username);
+    if (replyItem?.msg?.replyTo?.username) {
+      const replyTargetLower = String(replyItem.msg.replyTo.username).trim().toLowerCase();
       const targetBotUser = activeBots.find((b) => b.username.trim().toLowerCase() === replyTargetLower);
       if (targetBotUser) {
         const targetBotRec = bots.find((item) => getBotLiveId(item.id) === targetBotUser.id);
         if (targetBotRec && targetBotRec.enabled && targetBotRec.status !== 'offline') {
-          replyContextText = String(msg.replyTo.text || '').trim();
+          replyContextText = String(replyItem.msg.replyTo.text || '').trim();
           addressed = {
             botUser: targetBotUser,
             botRecord: targetBotRec,
@@ -1018,7 +1183,6 @@ export function createBotEngine(ctx) {
           };
         }
       } else if (replyTargetLower !== lowerSender) {
-        // Member explicitly replied to another human in the room -> step back cleanly
         activeConversations.delete(convKey);
         saveBotConversations();
         return;
@@ -1041,9 +1205,8 @@ export function createBotEngine(ctx) {
 
     const mentionsOtherHuman = messageMentionsOtherHumanInRoom(candidates, roomId, sender.id);
 
-    // Helper to execute AI/fallback reply for a chosen bot
-    const dispatchSmartBotReply = (botUser, botRecord, questionText, options = {}) => {
-      const { isFollowUp = false, isAmbient = false } = options;
+    const dispatchSmartBotReply = async (botUser, botRecord, questionText, options = {}) => {
+      const { isAmbient = false } = options;
       const isFarewell = /(مع السلامه|باي|تصبحون على خير|في امان الله|اشوفك على خير|برب|نوم العوافي)/u.test(firstNorm);
 
       if (isFarewell) {
@@ -1066,21 +1229,26 @@ export function createBotEngine(ctx) {
           const replyMsg = `لبيه يا ${senderDisplay}، أنا هنا! تكلم معي أو اسألني وراح أجاوبك 🌹`;
           recordBotTurnInMemory(botRecord.id, sender.username, effectiveText, replyMsg);
           saveBotConversations();
-          setTimeout(() => {
-            if (!botSettings.globalEnabled || !botSettings.autoRepliesEnabled) return;
-            const liveBot = users.find((u) => u.id === botUser.id && u.room === roomId);
-            if (!liveBot) return;
-            sendBotMessage(liveBot, roomId, replyMsg);
-          }, delayMs);
+          startRoomBotTyping(botUser, roomId);
+          await new Promise((r) => setTimeout(r, effectiveTypingDelayMs));
+          if (!botSettings.globalEnabled || !botSettings.autoRepliesEnabled) {
+            stopRoomBotTyping(botUser, roomId);
+            return;
+          }
+          const liveBot = users.find((u) => u.id === botUser.id && u.room === roomId);
+          if (!liveBot) {
+            stopRoomBotTyping(botUser, roomId);
+            return;
+          }
+          sendBotMessage(liveBot, roomId, replyMsg);
         }
-        return true;
+        return;
       }
 
-      // Deduplicate only accidental exact double-tap within 1.5s
       const normQuestionKey = normalizeArabicForMatch(questionText) || questionText.toLowerCase();
       const qaKey = `${botRecord.id}::${lowerSender}::qa::${normQuestionKey}`;
       if (now - (replyCooldowns.get(qaKey) || 0) < 1500) {
-        return true;
+        return;
       }
       replyCooldowns.set(qaKey, now);
       if (replyCooldowns.size > 500) {
@@ -1102,12 +1270,14 @@ export function createBotEngine(ctx) {
         }
       ];
 
-      if (botSettings.smartQaEnabled !== false) {
-        const roomObj = chatRooms.find((r) => r.id === roomId);
-        const roomName = roomObj?.name || roomId;
-        const startedAt = Date.now();
+      startRoomBotTyping(botUser, roomId);
 
-        (async () => {
+      try {
+        if (botSettings.smartQaEnabled !== false) {
+          const roomObj = chatRooms.find((r) => r.id === roomId);
+          const roomName = roomObj?.name || roomId;
+          const startedAt = Date.now();
+
           const aiRes = await askBotAI({
             bot: botRecord,
             personalityDescriptor: getPersonalityDescriptor(botRecord.personality),
@@ -1121,16 +1291,20 @@ export function createBotEngine(ctx) {
           });
 
           const elapsed = Date.now() - startedAt;
-          const remainingDelay = Math.max(0, delayMs - elapsed);
+          const remainingDelay = Math.max(0, effectiveTypingDelayMs - elapsed);
           if (remainingDelay > 0) {
             await new Promise((r) => setTimeout(r, remainingDelay));
           }
 
           if (!botSettings.globalEnabled || !botSettings.autoRepliesEnabled) {
+            stopRoomBotTyping(botUser, roomId);
             return;
           }
           const liveBot = users.find((u) => u.id === botUser.id && u.room === roomId);
-          if (!liveBot) return;
+          if (!liveBot) {
+            stopRoomBotTyping(botUser, roomId);
+            return;
+          }
 
           if (aiRes.ok && aiRes.text) {
             if (!isFarewell) {
@@ -1141,7 +1315,6 @@ export function createBotEngine(ctx) {
             return;
           }
 
-          // Fallback 1: keyword dictionary ("كلمات البوت")
           const fallbackRule = sortedRepliesFallback.find((r) => textMatchesKeyword(qCandidates, r.keyword));
           if (fallbackRule) {
             let replyText = formatReplyTemplate(fallbackRule.reply, senderDisplay, botRecord);
@@ -1155,43 +1328,45 @@ export function createBotEngine(ctx) {
             return;
           }
 
-          // Fallback 2: smart local conversational reply so follow-ups & ambient chat NEVER go unanswered
           console.warn(`[BotAI] Fallback triggered for bot "${botRecord.username}" (${aiRes.errorCode}): ${aiRes.errorMessage}`);
           const localReply = generateSmartLocalFallback(botRecord, senderDisplay, questionText, false);
           recordBotTurnInMemory(botRecord.id, sender.username, questionText, localReply);
           saveBotConversations();
           sendBotMessage(liveBot, roomId, localReply);
-        })().catch((err) => {
-          console.error('[BotAI] Unhandled async error:', err);
-        });
-        return true;
-      }
+          return;
+        }
 
-      // smartQaEnabled === false -> use keyword match or smart local conversational reply
-      const matchedRuleLocal = sortedRepliesFallback.find((r) => textMatchesKeyword(qCandidates, r.keyword));
-      const replyText = matchedRuleLocal
-        ? formatReplyTemplate(matchedRuleLocal.reply, senderDisplay, botRecord)
-        : generateSmartLocalFallback(botRecord, senderDisplay, questionText, false);
-      setTimeout(() => {
-        if (!botSettings.globalEnabled || !botSettings.autoRepliesEnabled) return;
+        // smartQaEnabled === false -> keyword match or smart local reply
+        const matchedRuleLocal = sortedRepliesFallback.find((r) => textMatchesKeyword(qCandidates, r.keyword));
+        const replyText = matchedRuleLocal
+          ? formatReplyTemplate(matchedRuleLocal.reply, senderDisplay, botRecord)
+          : generateSmartLocalFallback(botRecord, senderDisplay, questionText, false);
+        await new Promise((r) => setTimeout(r, effectiveTypingDelayMs));
+        if (!botSettings.globalEnabled || !botSettings.autoRepliesEnabled) {
+          stopRoomBotTyping(botUser, roomId);
+          return;
+        }
         const liveBot = users.find((u) => u.id === botUser.id && u.room === roomId);
-        if (!liveBot) return;
+        if (!liveBot) {
+          stopRoomBotTyping(botUser, roomId);
+          return;
+        }
         recordBotTurnInMemory(botRecord.id, sender.username, questionText, replyText);
         saveBotConversations();
         sendBotMessage(liveBot, roomId, replyText);
-      }, delayMs);
-      return true;
+      } catch (err) {
+        stopRoomBotTyping(botUser, roomId);
+        console.error('[BotAI] Unhandled async error:', err);
+      }
     };
 
     if (addressed) {
-      dispatchSmartBotReply(addressed.botUser, addressed.botRecord, addressed.questionText, {
-        isFollowUp: Boolean(addressed.isFollowUp),
+      await dispatchSmartBotReply(addressed.botUser, addressed.botRecord, addressed.questionText, {
         isAmbient: false
       });
       return;
     }
 
-    // If user explicitly mentioned another human in the room, do not interrupt human-to-human talk
     if (mentionsOtherHuman) {
       return;
     }
@@ -1205,8 +1380,9 @@ export function createBotEngine(ctx) {
 
     if (matchedRule) {
       const responder = activeBots.find((b) => {
+        if (b.isGhost) return false;
         const rec = bots.find((item) => getBotLiveId(item.id) === b.id);
-        if (!rec || !rec.enabled || rec.status === 'offline') return false;
+        if (!rec || !rec.enabled || rec.status === 'offline' || rec.status === 'hidden') return false;
         const cKey = `${rec.id}::${lowerSender}::kw::${matchedRule.id}`;
         return now - (replyCooldowns.get(cKey) || 0) >= 5 * 1000;
       });
@@ -1225,17 +1401,22 @@ export function createBotEngine(ctx) {
             replyText = `أنا ${botRecord.username} (${botRecord.personality}) — ${replyText}`;
           }
 
-          // Open active conversation so subsequent messages without bot's name keep flowing smoothly
           activeConversations.set(convKey, { botId: botRecord.id, updatedAt: now });
+          startRoomBotTyping(responder, roomId);
 
-          setTimeout(() => {
-            if (!botSettings.globalEnabled || !botSettings.autoRepliesEnabled) return;
-            const liveBot = users.find((u) => u.id === responder.id && u.room === roomId);
-            if (!liveBot) return;
-            recordBotTurnInMemory(botRecord.id, sender.username, effectiveText, replyText);
-            saveBotConversations();
-            sendBotMessage(liveBot, roomId, replyText);
-          }, delayMs);
+          await new Promise((r) => setTimeout(r, effectiveTypingDelayMs));
+          if (!botSettings.globalEnabled || !botSettings.autoRepliesEnabled) {
+            stopRoomBotTyping(responder, roomId);
+            return;
+          }
+          const liveBot = users.find((u) => u.id === responder.id && u.room === roomId);
+          if (!liveBot) {
+            stopRoomBotTyping(responder, roomId);
+            return;
+          }
+          recordBotTurnInMemory(botRecord.id, sender.username, effectiveText, replyText);
+          saveBotConversations();
+          sendBotMessage(liveBot, roomId, replyText);
           return;
         }
       }
@@ -1247,41 +1428,93 @@ export function createBotEngine(ctx) {
       return;
     }
 
-    // Skip ambient trigger on pure empty media unless user is already talking to a bot
-    if (!rawText && !originalText) {
+    if (!mergedRawText && !mergedOriginalText) {
       return;
     }
 
     const picked = selectAmbientBotInRoom(activeBots, roomId);
     if (picked) {
-      dispatchSmartBotReply(picked.botUser, picked.botRecord, effectiveText, {
-        isFollowUp: false,
+      await dispatchSmartBotReply(picked.botUser, picked.botRecord, effectiveText, {
         isAmbient: true
       });
     }
   }
 
-  async function processPrivateMessageBatch(queueKey, batchText, sender, botRecord, lastPm) {
-    const lowerSender = String(sender.username || '').trim().toLowerCase();
-    const senderDisplay = sender.displayName || sender.username;
-    const botLiveId = getBotLiveId(botRecord.id);
-    const botAvatar = botRecord.avatarUrl || DEFAULT_FALLBACK_BOT_AVATAR;
-
-    const stopTypingIfOnline = () => {
-      const liveSender = users.find((u) => !u.isBot && u.username.toLowerCase() === lowerSender);
-      const sid = liveSender?.id || sender.id;
-      if (sid && io.sockets.sockets.get(sid)?.connected) {
-        io.to(sid).emit('userPmTyping', {
-          fromUserId: botLiveId,
-          fromUsername: botRecord.username,
-          fromDisplayName: botRecord.username,
-          avatarUrl: botAvatar,
-          nameBannerUrl: '',
-          isTyping: false,
-          timestamp: Date.now()
-        });
+  async function drainRoomQueue(queueKey, roomId) {
+    const rq = roomQueues.get(queueKey);
+    if (!rq || rq.processing) return;
+    rq.processing = true;
+    try {
+      while (rq.messages.length > 0) {
+        const items = rq.messages.splice(0, rq.messages.length);
+        await processRoomMessageBatch(rq.sender, roomId, items);
       }
-    };
+    } finally {
+      rq.processing = false;
+      if (rq.messages.length === 0 && !rq.timer) {
+        roomQueues.delete(queueKey);
+      }
+    }
+  }
+
+  function onRoomMessage(sender, msg, rawOriginalText = '') {
+    if (!botSettings.globalEnabled || !botSettings.autoRepliesEnabled) return;
+    if (!sender || sender.isBot) return;
+    if (!msg) return;
+
+    const rawText = typeof msg.text === 'string' ? msg.text.trim() : '';
+    const originalText = typeof rawOriginalText === 'string' ? rawOriginalText.trim() : '';
+    const hasMediaAttachment = Boolean(msg.mediaUrl || msg.voiceNote);
+    if (!rawText && !originalText && !hasMediaAttachment) return;
+
+    const roomId = sender.room;
+    const activeBots = getActiveBotUsersInRoom(roomId);
+    if (activeBots.length === 0) return;
+
+    const effectiveText = rawText || originalText || (msg.voiceNote ? '[أرسل رسالة صوتية]' : '[أرسل صورة أو ملصق]');
+    const lowerSender = sender.username.trim().toLowerCase();
+    const queueKey = `${roomId}::${lowerSender}`;
+
+    // Immediate stop phrase check: abort queued items & silence right away
+    const normCheck = normalizeArabicForMatch(effectiveText);
+    if (/^(خلاص|اسكت|اسكتي|توقف|توقفي|بس خلاص|لا ترد|لا تردي)$/u.test(normCheck)) {
+      const existingQ = roomQueues.get(queueKey);
+      if (existingQ?.timer) {
+        clearTimeout(existingQ.timer);
+      }
+      roomQueues.delete(queueKey);
+      activeConversations.delete(queueKey);
+      ambientSilenceUntil.set(queueKey, Date.now() + 3 * 60 * 1000);
+      saveBotConversations();
+      for (const b of activeBots) {
+        stopRoomBotTyping(b, roomId);
+      }
+      return;
+    }
+
+    let rq = roomQueues.get(queueKey);
+    if (!rq) {
+      rq = { messages: [], timer: null, processing: false, sender };
+      roomQueues.set(queueKey, rq);
+    } else {
+      rq.sender = sender;
+    }
+
+    rq.messages.push({ rawText, originalText, effectiveText, msg });
+
+    if (rq.timer) {
+      clearTimeout(rq.timer);
+      rq.timer = null;
+    }
+
+    rq.timer = setTimeout(() => {
+      rq.timer = null;
+      drainRoomQueue(queueKey, roomId);
+    }, 240);
+  }
+
+  async function processPrivateMessageBatch(queueKey, batchText, sender, botRecord, lastPm) {
+    const senderDisplay = sender.displayName || sender.username;
 
     // Strip optional leading mention of the bot's own name
     let questionText = batchText;
@@ -1293,24 +1526,13 @@ export function createBotEngine(ctx) {
       if (stripped) questionText = stripped;
     }
 
-    const delayMs = botSettings.delayedReplyEnabled
+    const configuredDelayMs = botSettings.delayedReplyEnabled
       ? Math.max(0, Number(botSettings.replyDelaySeconds ?? 1)) * 1000
       : 0;
+    const effectiveTypingDelayMs = configuredDelayMs > 0 ? Math.max(configuredDelayMs, MIN_TYPING_PREVIEW_MS) : MIN_TYPING_PREVIEW_MS;
 
-    // Emit typing indicator once for this batch
-    const liveSenderNow = users.find((u) => !u.isBot && u.username.toLowerCase() === lowerSender);
-    const targetSid = liveSenderNow?.id || sender.id;
-    if (targetSid && io.sockets.sockets.get(targetSid)?.connected) {
-      io.to(targetSid).emit('userPmTyping', {
-        fromUserId: botLiveId,
-        fromUsername: botRecord.username,
-        fromDisplayName: botRecord.username,
-        avatarUrl: botAvatar,
-        nameBannerUrl: '',
-        isTyping: true,
-        timestamp: Date.now()
-      });
-    }
+    // Emit typing indicator with heartbeat refresh so it never expires during AI thinking
+    startPmBotTyping(botRecord, sender);
 
     const candidates = [
       {
@@ -1348,18 +1570,18 @@ export function createBotEngine(ctx) {
         });
 
         const elapsed = Date.now() - startedAt;
-        const remainingDelay = Math.max(0, delayMs - elapsed);
+        const remainingDelay = Math.max(0, effectiveTypingDelayMs - elapsed);
         if (remainingDelay > 0) {
           await new Promise((r) => setTimeout(r, remainingDelay));
         }
 
         if (!botSettings.globalEnabled || !botSettings.autoRepliesEnabled || botSettings.privateRepliesEnabled === false) {
-          stopTypingIfOnline();
+          stopPmBotTyping(botRecord, sender);
           return;
         }
         const latestBot = bots.find((b) => b.id === botRecord.id);
         if (!latestBot || !latestBot.enabled || latestBot.status === 'offline') {
-          stopTypingIfOnline();
+          stopPmBotTyping(botRecord, sender);
           return;
         }
 
@@ -1411,12 +1633,10 @@ export function createBotEngine(ctx) {
         replyText = generateSmartLocalFallback(botRecord, senderDisplay, questionText, true);
       }
 
-      if (delayMs > 0) {
-        await new Promise((r) => setTimeout(r, delayMs));
-      }
+      await new Promise((r) => setTimeout(r, effectiveTypingDelayMs));
       const latestBot = bots.find((b) => b.id === botRecord.id);
       if (!latestBot || !latestBot.enabled || latestBot.status === 'offline' || !botSettings.globalEnabled || !botSettings.autoRepliesEnabled || botSettings.privateRepliesEnabled === false) {
-        stopTypingIfOnline();
+        stopPmBotTyping(botRecord, sender);
         return;
       }
       recordBotTurnInMemory(latestBot.id, sender.username, batchText, replyText);
@@ -1424,7 +1644,7 @@ export function createBotEngine(ctx) {
       sendBotPrivateMessage(latestBot, sender, replyText, lastPm);
     } catch (err) {
       console.error('[BotAI][PM] Unhandled batch error:', err);
-      stopTypingIfOnline();
+      stopPmBotTyping(botRecord, sender);
     }
   }
 
@@ -1536,6 +1756,7 @@ export function createBotEngine(ctx) {
 
     clearBotHopTimer(bot.id);
     clearBotRejoinTimer(bot.id);
+    stopAllTypingForBot(bot);
     const affectedRooms = removeLiveUserForBot(bot.id);
     if (kickedFromRoom) affectedRooms.push(kickedFromRoom);
     broadcastPresenceForRooms(new Set(affectedRooms));
@@ -1691,6 +1912,7 @@ export function createBotEngine(ctx) {
       updatedAt: Date.now()
     };
 
+    stopAllTypingForBot(updated);
     bots[idx] = updated;
     saveBots();
     upsertRegisteredMemberForBot(updated, prev.username);
@@ -1713,6 +1935,7 @@ export function createBotEngine(ctx) {
     const removed = bots.splice(idx, 1)[0];
     clearBotHopTimer(botId);
     clearBotRejoinTimer(botId);
+    stopAllTypingForBot(removed);
 
     const affectedRooms = removeLiveUserForBot(botId);
     if (removed.currentRoom) affectedRooms.push(removed.currentRoom);
@@ -1747,6 +1970,7 @@ export function createBotEngine(ctx) {
     if (!bot.enabled) {
       clearBotHopTimer(bot.id);
       clearBotRejoinTimer(bot.id);
+      stopAllTypingForBot(bot);
     }
 
     saveBots();
