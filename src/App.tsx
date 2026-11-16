@@ -71,7 +71,8 @@ import {
   Reply,
   Edit3,
   MessageSquare,
-  Upload
+  Upload,
+  Crop
 } from 'lucide-react';
 import confetti from './utils/confetti';
 import { AudioMeshManager, RemoteVoicePeer } from './utils/audioMesh';
@@ -115,6 +116,7 @@ import type { ThemeDefinition } from './components/ThemeAndWallpaperCenter';
 import { ChatPowerToolsBar } from './components/ChatPowerToolsBar';
 import { AvatarWithFrame } from './components/AvatarWithFrame';
 import { MembershipDesignModal } from './components/MembershipDesignModal';
+import { RoomBannerCropModal } from './components/RoomBannerCropModal';
 import { CustomEmojiPickerPopover } from './components/CustomEmojiPickerPopover';
 import { resolveMemberBgUrl } from './constants/membershipDesigns';
 
@@ -768,6 +770,11 @@ export default function App() {
   const [showBannerPickerModal, setShowBannerPickerModal] = useState<boolean>(false);
   const [bannerPickerTargetUser, setBannerPickerTargetUser] = useState<User | null>(null);
   const [customBannerUrlInput, setCustomBannerUrlInput] = useState<string>('');
+  const [bannerCropContext, setBannerCropContext] = useState<{
+    target: 'roomSettings' | 'drawerEdit' | 'drawerCreate';
+    initialUrl?: string;
+    roomName?: string;
+  } | null>(null);
   const [emojiPickerTab, setEmojiPickerTab] = useState<'custom' | 'stickers' | 'vintage'>('custom');
 
   // Member Gifting System State (نظام إهداء الهدايا الفاخرة وتثبيتها كمرافقة للاسم بجانب الصورة)
@@ -11927,7 +11934,7 @@ export default function App() {
                       <ImageIcon className="w-3.5 h-3.5" />
                       <span>بنر للغرفة (خلفية الغرفة):</span>
                     </span>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <label
                         onClick={(e) => {
                           if (!userCanEditRoomBanner) {
@@ -11946,6 +11953,25 @@ export default function App() {
                           onChange={(e) => handleFileUpload(e, (url) => setNewRoomBannerUrl(url))}
                         />
                       </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!userCanEditRoomBanner) {
+                            showToast('ليس لديك صلاحية تغيير بنر الغرفة 🔒', 'error');
+                            return;
+                          }
+                          setBannerCropContext({
+                            target: 'drawerCreate',
+                            initialUrl: newRoomBannerUrl || undefined,
+                            roomName: newRoomName ? `Room | ${newRoomName}` : 'غرفة جديدة'
+                          });
+                        }}
+                        className="px-2.5 py-1 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 text-[10px] font-black flex items-center gap-1 cursor-pointer"
+                        title="قص وضبط مقاس البنر باستخدام أداة الكانفاس"
+                      >
+                        <Crop className="w-3 h-3" />
+                        <span>قص وضبط المقاس</span>
+                      </button>
                       {newRoomBannerUrl && (
                         <button
                           type="button"
@@ -12067,7 +12093,7 @@ export default function App() {
                       <ImageIcon className="w-3.5 h-3.5" />
                       <span>بنر للغرفة (يظهر كخلفية في قائمة الغرف):</span>
                     </span>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <label
                         onClick={(e) => {
                           if (!userCanEditRoomBanner) {
@@ -12086,6 +12112,25 @@ export default function App() {
                           onChange={(e) => handleFileUpload(e, (url) => setEditDrawerRoomForm((prev) => ({ ...prev, bannerUrl: url })))}
                         />
                       </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!userCanEditRoomBanner) {
+                            showToast('ليس لديك صلاحية تغيير بنر الغرفة 🔒', 'error');
+                            return;
+                          }
+                          setBannerCropContext({
+                            target: 'drawerEdit',
+                            initialUrl: editDrawerRoomForm.bannerUrl || undefined,
+                            roomName: editDrawerRoomForm.name || editingDrawerRoom?.name || 'الغرفة'
+                          });
+                        }}
+                        className="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                        title="قص وضبط مقاس البنر باستخدام أداة الكانفاس"
+                      >
+                        <Crop className="w-3 h-3" />
+                        <span>قص وضبط المقاس</span>
+                      </button>
                       {editDrawerRoomForm.bannerUrl && (
                         <button
                           type="button"
@@ -16804,6 +16849,30 @@ export default function App() {
           />
         )}
 
+        {/* Room Banner Canvas Cropper & Scaler Modal (أداة قص وضبط مقاس بنر الغرفة بدون تشويه) */}
+        <RoomBannerCropModal
+          isOpen={Boolean(bannerCropContext)}
+          onClose={() => setBannerCropContext(null)}
+          initialImageUrl={bannerCropContext?.initialUrl}
+          roomNamePreview={bannerCropContext?.roomName || currentUser?.room || 'الغرفة العامة'}
+          onShowToast={showToast}
+          onSaveCroppedFile={async (file) => {
+            showToast('جاري رفع البنر المقصوص إلى السيرفر... ⏳', 'info');
+            const res = await uploadMediaWithProgress(file);
+            if (!res?.url) {
+              throw new Error('فشل استلام رابط الصورة المقصوصة');
+            }
+            if (bannerCropContext?.target === 'roomSettings') {
+              setCurrentRoomSettingsForm((prev) => ({ ...prev, bannerUrl: res.url }));
+            } else if (bannerCropContext?.target === 'drawerEdit') {
+              setEditDrawerRoomForm((prev) => ({ ...prev, bannerUrl: res.url }));
+            } else if (bannerCropContext?.target === 'drawerCreate') {
+              setNewRoomBannerUrl(res.url);
+            }
+            showToast('تم قص وضبط مقاس بنر الغرفة بنجاح ✂️✅', 'success');
+          }}
+        />
+
         {/* 7. Dedicated In-Room Settings Modal (تعديل إعدادات الغرفة الحالية بالكامل وبنر الغرفة) */}
         {isRoomSettingsModalOpen && (userCanManageRoomSettings || userCanEditRoomBanner) && (
           <div
@@ -16979,7 +17048,7 @@ export default function App() {
                       <span className="font-bold text-amber-300 block text-xs">بنر للغرفة (خلفية الغرفة في القائمة):</span>
                       <span className="text-[10px] text-slate-400">تتمدد مساحة الغرفة في القائمة حسب الصورة المرفوعة</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <label
                         onClick={(e) => {
                           if (!userCanEditRoomBanner) {
@@ -16998,6 +17067,25 @@ export default function App() {
                           onChange={(e) => handleFileUpload(e, (url) => setCurrentRoomSettingsForm((prev) => ({ ...prev, bannerUrl: url })))}
                         />
                       </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!userCanEditRoomBanner) {
+                            showToast('ليس لديك صلاحية تغيير بنر الغرفة 🔒', 'error');
+                            return;
+                          }
+                          setBannerCropContext({
+                            target: 'roomSettings',
+                            initialUrl: currentRoomSettingsForm.bannerUrl || undefined,
+                            roomName: currentRoomSettingsForm.name || currentUser?.room || 'الغرفة العامة'
+                          });
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                        title="قص وضبط مقاس البنر باستخدام أداة الكانفاس لمنع التشويه"
+                      >
+                        <Crop className="w-3.5 h-3.5" />
+                        <span>قص وضبط المقاس</span>
+                      </button>
                       {currentRoomSettingsForm.bannerUrl && (
                         <button
                           type="button"
