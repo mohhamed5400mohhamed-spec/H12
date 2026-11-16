@@ -115,6 +115,7 @@ import type { ThemeDefinition } from './components/ThemeAndWallpaperCenter';
 import { ChatPowerToolsBar } from './components/ChatPowerToolsBar';
 import { AvatarWithFrame } from './components/AvatarWithFrame';
 import { MembershipDesignModal } from './components/MembershipDesignModal';
+import { CustomEmojiPickerPopover } from './components/CustomEmojiPickerPopover';
 import { resolveMemberBgUrl } from './constants/membershipDesigns';
 
 // Helper for resilient dynamic imports with automatic retries on network drops / server reloads
@@ -750,6 +751,11 @@ export default function App() {
     isSpeakerMutedRef.current = isSpeakerMuted;
   }, [isSpeakerMuted]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showPmEmojiPicker, setShowPmEmojiPicker] = useState(false);
+  const [showWallEmojiPicker, setShowWallEmojiPicker] = useState(false);
+  const [showWallCommentEmojiPostId, setShowWallCommentEmojiPostId] = useState<string | null>(null);
+  const pmInputRef = useRef<HTMLTextAreaElement>(null);
+  const wallTextInputRef = useRef<HTMLTextAreaElement>(null);
   const [showMediaPicker, setShowMediaPicker] = useState(false);
   const [showPlusMenu, setShowPlusMenu] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
@@ -7430,7 +7436,36 @@ export default function App() {
         </div>
 
         {/* Bottom PM Input Bar - Ultra Compact */}
-        <div className={`p-1 sm:p-1.5 border-t ${curTheme.cardBorder || 'border-slate-800'} ${curTheme.cardBg || 'bg-[#19130d]'} flex flex-col gap-0.5 shadow-sm shrink-0`}>
+        <div className={`relative p-1 sm:p-1.5 border-t ${curTheme.cardBorder || 'border-slate-800'} ${curTheme.cardBg || 'bg-[#19130d]'} flex flex-col gap-0.5 shadow-sm shrink-0`}>
+          {/* Custom Emojis & Stickers Popover for Private Messages (الخاص) */}
+          <CustomEmojiPickerPopover
+            isOpen={showPmEmojiPicker}
+            onClose={() => setShowPmEmojiPicker(false)}
+            items={emblemsConfig.items}
+            compact={isSplit}
+            alignClassName="bottom-full right-1 mb-1.5"
+            onSelectCustomEmoji={(shortcut) => {
+              setPmInput((prev) => (prev ? `${prev} ${shortcut} ` : `${shortcut} `));
+              setTimeout(() => pmInputRef.current?.focus(), 0);
+              showToast(`تم إدراج كود الفيس [${shortcut}] ⚡`, 'info');
+            }}
+            onSelectSticker={(imageUrl) => {
+              if (!selectedPmUser) return;
+              socket?.emit('privateMessage', {
+                toId: selectedPmUser.id,
+                toUsername: selectedPmUser.username,
+                text: '',
+                mediaUrl: imageUrl,
+                replyTo: pmReplyingTo || undefined,
+                selfDestructSeconds: pmSelfDestructSeconds > 0 ? pmSelfDestructSeconds : undefined
+              });
+              setPmReplyingTo(null);
+            }}
+            onSelectVintageEmoji={(emojiChar) => {
+              setPmInput((prev) => `${prev}${emojiChar}`);
+              setTimeout(() => pmInputRef.current?.focus(), 0);
+            }}
+          />
           {/* PM Replying Banner */}
           {pmReplyingTo && (
             <div className="px-1.5 py-0.2 bg-amber-950/60 border border-amber-500/40 rounded flex items-center justify-between text-[10px] text-amber-200">
@@ -7527,6 +7562,18 @@ export default function App() {
                 />
               </label>
 
+              {/* Custom Emojis Button (الفيسات المخصصة للخاص) */}
+              <button
+                type="button"
+                onClick={() => setShowPmEmojiPicker((v) => !v)}
+                className={`p-1 rounded cursor-pointer transition-colors flex-shrink-0 text-sm leading-none ${
+                  showPmEmojiPicker ? 'bg-amber-500/25 ring-1 ring-amber-400' : 'hover:bg-slate-800'
+                }`}
+                title="الفيسات المخصصة والملصقات 😊"
+              >
+                😊
+              </button>
+
               {/* Voice button */}
               <button
                 type="button"
@@ -7615,6 +7662,7 @@ export default function App() {
 
               {/* Textarea */}
               <textarea
+                ref={pmInputRef}
                 rows={1}
                 name="chat_pm_text_freeform"
                 id="chat_pm_text_freeform"
@@ -13560,7 +13608,36 @@ export default function App() {
                         })()}
 
                         {/* Add Comment Input */}
-                        <div className="flex items-center gap-1.5 pt-1">
+                        <div className="relative flex items-center gap-1.5 pt-1">
+                          <CustomEmojiPickerPopover
+                            isOpen={showWallCommentEmojiPostId === post.id}
+                            onClose={() => setShowWallCommentEmojiPostId(null)}
+                            items={emblemsConfig.items}
+                            allowStickers={false}
+                            compact
+                            alignClassName="bottom-full right-0 mb-1.5"
+                            onSelectCustomEmoji={(shortcut) => {
+                              setWallCommentInput((prev) => (prev ? `${prev} ${shortcut} ` : `${shortcut} `));
+                              showToast(`تم إدراج الفيس [${shortcut}] في التعليق ⚡`, 'info');
+                            }}
+                            onSelectVintageEmoji={(emojiChar) => {
+                              setWallCommentInput((prev) => `${prev}${emojiChar}`);
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShowWallCommentEmojiPostId((prev) => (prev === post.id ? null : post.id))
+                            }
+                            className={`w-8 h-9 rounded-lg flex items-center justify-center text-base cursor-pointer shrink-0 border transition-colors ${
+                              showWallCommentEmojiPostId === post.id
+                                ? 'bg-amber-100 border-amber-400'
+                                : 'bg-white border-slate-300 hover:bg-slate-100'
+                            }`}
+                            title="الفيسات المخصصة للتعليق 😊"
+                          >
+                            😊
+                          </button>
                           <textarea
                             rows={1}
                             name="chat_wall_comment_freeform"
@@ -13637,8 +13714,46 @@ export default function App() {
               );
             })()}
 
-            {/* Quick reply bar at bottom with Video / Photo upload */}
-            <div className="p-2 border-t bg-slate-50 flex items-center gap-1.5">
+            {/* Quick reply bar at bottom with Video / Photo upload + Custom Emojis */}
+            <div className="relative p-2 border-t bg-slate-50 flex items-center gap-1.5">
+              <CustomEmojiPickerPopover
+                isOpen={showWallEmojiPicker}
+                onClose={() => setShowWallEmojiPicker(false)}
+                items={emblemsConfig.items}
+                alignClassName="bottom-full right-2 mb-2"
+                onSelectCustomEmoji={(shortcut) => {
+                  setWallTextInput((prev) => (prev ? `${prev} ${shortcut} ` : `${shortcut} `));
+                  setTimeout(() => wallTextInputRef.current?.focus(), 0);
+                  showToast(`تم إدراج كود الفيس [${shortcut}] ⚡`, 'info');
+                }}
+                onSelectSticker={(imageUrl) => {
+                  if (!currentUser) {
+                    showToast('يجب تسجيل الدخول أولاً للنشر على الحائط 🔐', 'error');
+                    return;
+                  }
+                  socket?.emit('newWallPost', {
+                    text: '',
+                    mediaUrl: imageUrl,
+                    category: wallTab
+                  });
+                }}
+                onSelectVintageEmoji={(emojiChar) => {
+                  setWallTextInput((prev) => `${prev}${emojiChar}`);
+                  setTimeout(() => wallTextInputRef.current?.focus(), 0);
+                }}
+              />
+
+              <button
+                type="button"
+                onClick={() => setShowWallEmojiPicker((v) => !v)}
+                className={`w-8 h-8 rounded-lg text-lg flex items-center justify-center transition-all cursor-pointer flex-shrink-0 ${
+                  showWallEmojiPicker ? 'bg-amber-200 ring-1 ring-amber-500' : 'hover:bg-slate-200'
+                }`}
+                title="الفيسات المخصصة والملصقات 😊"
+              >
+                😊
+              </button>
+
               <label className={`p-2 text-slate-500 hover:text-indigo-600 cursor-pointer rounded hover:bg-slate-100 flex-shrink-0 ${isWallUploading ? 'opacity-50 pointer-events-none' : ''}`} title="إرفاق فيديو أو صورة للمنشور">
                 <ImageIcon className="w-4 h-4 text-rose-500" />
                 <input
@@ -13651,6 +13766,7 @@ export default function App() {
               </label>
 
               <textarea
+                ref={wallTextInputRef}
                 rows={1}
                 name="chat_wall_post_freeform"
                 id="chat_wall_post_freeform"
